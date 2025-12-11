@@ -1,0 +1,55 @@
+{
+  "name": "jstream-desktop",
+  "productName": "jstream-desktop",
+  "version": "1.0.0",
+  "description": "My Electron application description",
+  "main": ".vite/build/main.js",
+  "scripts": {
+    "test": "vitest"
+  },
+  "keywords": [],
+  "author": {
+    "name": "John Lloyd Quijano",
+    "email": "dsafjeioruy8439.fwsefj143@gmail.com"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@electron-forge/cli": "^7.8.3",
+    "@electron-forge/maker-deb": "^7.10.2",
+    "@electron-forge/maker-rpm": "^7.10.2",
+    "@electron-forge/maker-squirrel": "^7.10.2",
+    "@electron-forge/maker-zip": "^7.10.2",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.10.2",
+    "@electron-forge/plugin-fuses": "^7.10.2",
+    "@electron-forge/plugin-vite": "^7.10.2",
+    "@electron/fuses": "^1.8.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@types/electron-squirrel-startup": "^1.0.2",
+    "@types/testing-library__jest-dom": "^5.14.9",
+    "@typescript-eslint/eslint-plugin": "^5.62.0",
+    "@typescript-eslint/parser": "^5.62.0",
+    "electron": "39.2.6",
+    "eslint": "^8.57.1",
+    "eslint-plugin-import": "^2.32.0",
+    "jsdom": "^27.3.0",
+    "typescript": "~4.5.4",
+    "vite": "^7.2.7",
+    "vitest": "^4.0.15"
+  },
+  "dependencies": {
+    "@chakra-ui/react": "^3.30.0",
+    "@chakra-ui/tabs": "^3.0.0",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/material": "^7.3.6",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "better-sqlite3": "^12.5.0",
+    "electron-squirrel-startup": "^1.0.1",
+    "firebase": "^12.6.0",
+    "framer-motion": "^12.23.26",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1"
+  }
+}

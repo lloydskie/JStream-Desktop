@@ -1,0 +1,14 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Hello World!</title>
+    <!-- Content Security Policy: For development, Vite/Electron requires 'unsafe-eval'. Remove or tighten this before production builds. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; connect-src 'self' http://localhost:5173 https://api.themoviedb.org https://player.videasy.net;">
+
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/renderer.tsx"></script>
+  </body>
+</html>
