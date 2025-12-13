@@ -96,3 +96,12 @@ contextBridge.exposeInMainWorld('tmdb', {
 contextBridge.exposeInMainWorld('tmdbExports', {
   fetchCollectionsFeed: (opts?: { tryDays?: number, page?: number, perPage?: number }) => ipcRenderer.invoke('tmdb-exports-getCollectionsFeed', opts || {}),
 });
+
+// Safe TMDB helper API: fetch missing details from main (keeps API key in main process)
+contextBridge.exposeInMainWorld('tmdbApi', {
+  fetchDetails: (id: number, media_type: string = 'movie') => ipcRenderer.invoke('fetch-details', { id, media_type }),
+  imageUrl: (posterPath: string | null, size: string = 'w185') => {
+    if (!posterPath) return null;
+    return `https://image.tmdb.org/t/p/${size}${posterPath}`;
+  }
+});

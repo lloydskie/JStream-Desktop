@@ -64,60 +64,76 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSele
     setFeedLoadingMore(true);
     try {
       const res = await (window as any).tmdbExports.fetchCollectionsFeed({ tryDays: 10, page: p, perPage: 24 });
-      const { ids = [], hasMore = false, error } = res || {};
+      const { items = [], hasMore = false, error } = res || {};
       if (error) {
         setFeedError(error);
         setFeedCollections([]);
         setFeedHasMore(false);
         return;
       }
-      // Debug logging: show how many ids main returned and a sample
-      try { console.log('Collections feed page', p, 'ids count', ids.length, 'sample', ids.slice(0, 6)); } catch (e) {}
-      // Renderer will fetch details for returned ids with controlled concurrency.
-      async function fetchDetailsForIds(idsArr: number[], append: boolean) {
-        if (!Array.isArray(idsArr) || idsArr.length === 0) return;
-        const normalizedIds = idsArr.map(id => Number(id));
-        const toFetch = normalizedIds.filter(id => !detailCache.current.has(id));
-        console.log('fetchDetailsForIds: toFetch ids', toFetch);
+      // Debug logging: show how many items main returned and a sample
+      try { console.log('Collections feed page', p, 'items count', items.length, 'sample:', items.slice(0, 6)); } catch (e) {}
+      // Renderer will search for collection details using name with controlled concurrency.
+      async function fetchDetailsForItems(itemsArr: {id: number, name?: string}[]) {
+        if (!Array.isArray(itemsArr) || itemsArr.length === 0) return;
+        const toFetch = itemsArr.filter(item => !detailCache.current.has(item.id));
+        console.log('fetchDetailsForItems: toFetch items', toFetch);
         // Insert placeholders in order to ensure the displayed feed keeps stable ordering
         setFeedCollections(prev => {
           const existingIds = new Set(prev.map(p => Number(p.id)));
-          const placeholders = idsArr.map(id => Number(id)).filter(id => !existingIds.has(id)).map(id => ({ id, name: '', poster_path: null, backdrop_path: null, _placeholder: true }));
-          console.log('Inserting placeholders for ids', placeholders.map(p => p.id));
-          return append ? [...prev, ...placeholders] : [...placeholders];
-        });
-        // Immediately recompose results from cache to fill any entries that are already cached,
-        // this helps if detailCache was pre-populated or previous pages overlap.
-        const cachedResults = normalizedIds.map(id => {
-          const d = detailCache.current.get(Number(id));
-          if (d) return { id, name: d.name || `Collection ${id}`, poster_path: d.poster_path, backdrop_path: d.backdrop_path, _placeholder: false };
-          return { id, name: '', poster_path: null, backdrop_path: null, _placeholder: true };
-        });
-        setFeedCollections(prev => {
-          const existingIds = new Set(prev.map(p => Number(p.id)));
-          // replace placeholders for IDs that exist
-          const newPrev = prev.map(item => {
-            if (existingIds.has(Number(item.id)) && normalizedIds.includes(Number(item.id))) {
-              const r = cachedResults.find(rr => rr.id === Number(item.id));
-              return r ? r : item;
-            }
-            return item;
-          });
-          // Append any missing cached results
-          const missing = cachedResults.filter(r => !newPrev.some(n => Number(n.id) === r.id));
-          return append ? [...newPrev, ...missing] : [...missing];
+          const placeholders = itemsArr.map(item => ({ id: item.id, name: item.name || '', poster_path: null, backdrop_path: null, poster_full: null, _placeholder: true }));
+          console.log('Inserting placeholders for items', placeholders.map(p => ({ id: p.id, name: p.name })));
+          return prev.concat(placeholders.filter(p => !existingIds.has(p.id)));
         });
         const concurrency = 4;
         let idx = 0;
         // minimal retry helper
-        async function fetchWithRetries(id: number, attempts = 3) {
+        async function fetchWithRetries(item: {id: number, name?: string}, attempts = 3) {
           let lastErr: any = null;
           let delay = 500;
           for (let i = 0; i < attempts; i++) {
             try {
-              const detail = await (window as any).tmdb.request(`collection/${id}`);
-              if (!detail || detail.error) throw detail || new Error('Invalid response');
-              return detail;
+              // First try direct collection/{id} endpoint
+              console.log(`Trying direct collection endpoint for ${item.id}`);
+              const directRes = await (window as any).tmdb.request(`collection/${item.id}`);
+              console.log(`Direct collection response for ${item.id}:`, directRes);
+              if (directRes && !directRes.error && directRes.id) {
+                console.log(`Found collection ${item.id} via direct endpoint:`, directRes);
+                return directRes;
+              }
+              // If direct fails, use search/collection with the name
+              let query = item.name || `collection ${item.id}`;
+              if (query.toLowerCase().endsWith(' collection')) {
+                query = query.slice(0, -11).trim(); // remove " collection"
+              }
+              // Use first 2-3 words for better search results
+              const words = query.split(' ').slice(0, 3);
+              query = words.join(' ');
+              console.log(`Searching for collection ${item.id} (${item.name}) with query: "${query}"`);
+              const encodedQuery = encodeURIComponent(query);
+              const searchRes = await (window as any).tmdb.request(`search/collection?query=${encodedQuery}&include_adult=false&language=en-US&page=1`);
+              console.log(`Search response for "${query}":`, searchRes);
+              if (!searchRes || searchRes.error) throw searchRes || new Error('Invalid search response');
+              // Find the result with matching id
+              const result = searchRes.results?.find((r: any) => r.id === item.id);
+              if (!result) {
+                console.log(`Collection ${item.id} (${item.name}) not found in search results for query "${query}", trying full name`);
+                // If not found, try with the full name
+                const fullQuery = encodeURIComponent(item.name || `collection ${item.id}`);
+                console.log(`Searching with full name query: "${fullQuery}"`);
+                const fullSearchRes = await (window as any).tmdb.request(`search/collection?query=${fullQuery}&include_adult=false&language=en-US&page=1`);
+                console.log(`Full name search response for "${fullQuery}":`, fullSearchRes);
+                if (fullSearchRes && !fullSearchRes.error) {
+                  const fullResult = fullSearchRes.results?.find((r: any) => r.id === item.id);
+                  if (fullResult) {
+                    console.log(`Found collection ${item.id} with full name query:`, fullResult);
+                    return fullResult;
+                  }
+                }
+                throw new Error('Collection not found in search results');
+              }
+              console.log(`Found collection ${item.id} with query "${query}":`, result);
+              return result;
             } catch (err) {
               lastErr = err;
               await new Promise(r => setTimeout(r, delay));
@@ -129,51 +145,42 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSele
         const workers = Array.from({ length: concurrency }).map(async () => {
           while (idx < toFetch.length) {
             const i = idx++;
-            const id = toFetch[i];
+            const item = toFetch[i];
             try {
-              const detail = await fetchWithRetries(Number(id), 3);
-              console.log('Fetching collection detail for id', id, '->', detail && detail.error ? 'ERROR' : 'OK');
-              // Defensive: ensure poster_path and name are present
-              const value = (detail && !detail.error)
-                ? {
-                    id: detail.id || id,
-                    name: detail.name || `Collection ${id}`,
-                    poster_path: detail.poster_path || (detail.backdrop_path ? detail.backdrop_path : null),
-                    backdrop_path: detail.backdrop_path || null
-                  }
-                : { id, name: `Collection ${id}`, poster_path: null, backdrop_path: null };
-              detailCache.current.set(Number(id), value);
+              const detail = await fetchWithRetries(item, 3);
+              console.log('Fetching collection detail for id', item.id, 'name', item.name, '->', detail && detail.error ? 'ERROR' : 'OK');
+              // Use the search result
+              const value = {
+                id: detail.id || item.id,
+                name: detail.name || item.name || `Collection ${item.id}`,
+                poster_path: detail.poster_path,
+                backdrop_path: detail.backdrop_path,
+                poster_full: detail.poster_path ? `https://image.tmdb.org/t/p/original${detail.poster_path}` : (detail.backdrop_path ? `https://image.tmdb.org/t/p/original${detail.backdrop_path}` : null)
+              };
+              detailCache.current.set(Number(item.id), value);
               // update stats for a single loaded item
               setFeedStats(s => ({ ...s, filled: (s.filled || 0) + 1 }));
-              console.log('detail for', id, 'cached');
-              // Replace placeholder with the full detail while preserving order
-              setFeedCollections(prev => {
-                const found = prev.some(item => Number(item.id) === Number(id));
-                if (!found) {
-                  console.warn('No placeholder found for id', id, 'current feed ids', prev.map(i => i.id));
-                }
-                return prev.map(item => (Number(item.id) === Number(id) ? { ...item, name: value.name || `Collection ${id}`, poster_path: value.poster_path, backdrop_path: value.backdrop_path, _placeholder: false } : item));
-              });
+              console.log('detail for', item.id, 'cached');
             } catch (e) {
-              console.warn('Failed to fetch collection detail for id', id, e);
+              console.warn('Failed to fetch collection detail for id', item.id, e);
               // increment failed count
               setFeedStats(s => ({ ...s, failed: (s.failed || 0) + 1 }));
-              detailCache.current.set(Number(id), { id, name: `Collection ${id}`, poster_path: null, backdrop_path: null });
+              detailCache.current.set(Number(item.id), { id: item.id, name: item.name || `Collection ${item.id}`, poster_path: null, backdrop_path: null, poster_full: null });
             }
           }
         });
         await Promise.all(workers);
         // Recompose final ordered results and update feed in-place
-        const finalResults = normalizedIds.map(id => {
-          const d = detailCache.current.get(Number(id));
-          if (d) return { id: Number(id), name: d.name || `Collection ${id}`, poster_path: d.poster_path, backdrop_path: d.backdrop_path, _placeholder: false };
-          return { id: Number(id), name: '', poster_path: null, backdrop_path: null, _placeholder: true };
+        const finalResults = itemsArr.map(item => {
+          const d = detailCache.current.get(Number(item.id));
+          if (d) return { id: Number(item.id), name: d.name || item.name || `Collection ${item.id}`, poster_path: d.poster_path, backdrop_path: d.backdrop_path, poster_full: d.poster_full || null, _placeholder: false };
+          return { id: Number(item.id), name: item.name || '', poster_path: null, backdrop_path: null, poster_full: null, _placeholder: true };
         });
         setFeedCollections(prev => {
-          const otherPrev = prev.filter(item => !normalizedIds.includes(Number(item.id)));
-          return append ? [...otherPrev, ...finalResults] : [...finalResults];
+          const otherPrev = prev.filter(item => !itemsArr.some(i => i.id === Number(item.id)));
+          return otherPrev.concat(finalResults);
         });
-        console.log('finalResults for ids', normalizedIds, '->', finalResults.map(r => ({ id: r.id, name: r.name, poster: r.poster_path }))); 
+        console.log('finalResults for items', itemsArr.map(i => ({ id: i.id, name: i.name })), '->', finalResults.map(r => ({ id: r.id, name: r.name, poster: r.poster_path }))); 
         // Update stats
         const total = finalResults.length;
         const filled = finalResults.filter(r => !r._placeholder).length;
@@ -183,10 +190,10 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSele
 
       if (p === 1) {
         setFeedCollections([]);
-        await fetchDetailsForIds(ids, false);
+        await fetchDetailsForItems(items);
         setFeedHasMore(hasMore);
       } else {
-        await fetchDetailsForIds(ids, true);
+        await fetchDetailsForItems(items);
         setFeedHasMore(hasMore);
       }
       setFeedPage(p);
@@ -218,20 +225,24 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSele
           </div>
         </div>
         <div className="movie-grid" style={{gridTemplateColumns:'repeat(auto-fill, minmax(160px, 1fr))', paddingBottom:20}}>
-          {parts.map((p:any)=> (
-            <div key={p.id} className="movie-card" role="button" tabIndex={0} onClick={() => onSelectMovie && onSelectMovie(p.id, 'movie')}>
-              <div className="movie-overlay">
-                <img className="movie-poster" src={p.poster_path ? `https://image.tmdb.org/t/p/w300${p.poster_path}` : undefined} alt={p.title || p.name} />
-                <div className="play-overlay" onClick={(ev)=>{ ev.stopPropagation(); if (onPlayMovie) onPlayMovie(p.id, 'movie', { tmdbId: p.id }); }}>
-                  <div className="play-circle"><div className="play-triangle"/></div>
+          {parts.map((p:any)=> {
+            const api = (window as any).tmdbApi;
+            const posterSrc = p.poster_path ? (api && api.imageUrl ? api.imageUrl(p.poster_path, 'w300') : `https://image.tmdb.org/t/p/w300${p.poster_path}`) : undefined;
+            return (
+              <div key={p.id} className="movie-card" role="button" tabIndex={0} onClick={() => onSelectMovie && onSelectMovie(p.id, 'movie')}>
+                <div className="movie-overlay">
+                  <img className="movie-poster" src={posterSrc || undefined} alt={p.title || p.name} loading="lazy" onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/assets/default_collection_poster.png'; }} />
+                  <div className="play-overlay" onClick={(ev)=>{ ev.stopPropagation(); if (onPlayMovie) onPlayMovie(p.id, 'movie', { tmdbId: p.id }); }}>
+                    <div className="play-circle"><div className="play-triangle"/></div>
+                  </div>
+                </div>
+                <div className="movie-info">
+                  <div style={{fontWeight:700}}>{p.title || p.name}</div>
+                  <div style={{fontSize:12,color:'var(--muted)'}}>{p.release_date}</div>
                 </div>
               </div>
-              <div className="movie-info">
-                <div style={{fontWeight:700}}>{p.title || p.name}</div>
-                <div style={{fontSize:12,color:'var(--muted)'}}>{p.release_date}</div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </Box>
     );
@@ -257,20 +268,26 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSele
           <div style={{color:'var(--muted)', padding:12, textAlign:'center'}}>{feedError ? `Feed error: ${feedError}` : query.trim() ? 'No collections match your search.' : 'No feed available. Try searching or run the daily export service.'}</div>
         ) : query.trim() ? (
           <div className="movie-grid" style={{gridTemplateColumns:'repeat(auto-fill, minmax(160px, 1fr))', paddingBottom:20}}>
-            {filteredFeed.map((c:any) => (
-              <div key={c.id} className="movie-card" role="button" tabIndex={0} onClick={() => setSelectedCollection(c.id)}>
-                <div className="movie-overlay">
-                    {c._placeholder ? (
-                      <div style={{width:'100%',height:240,background:'#222',display:'flex',alignItems:'center',justifyContent:'center',color:'#888'}}>Loading...</div>
-                    ) : (
-                      <img className="movie-poster" src={c.poster_path ? `https://image.tmdb.org/t/p/w300${c.poster_path}` : c.backdrop_path ? `https://image.tmdb.org/t/p/w300${c.backdrop_path}` : defaultPoster} alt={c.name || `Collection ${c.id}`} onError={(e) => { (e.currentTarget as HTMLImageElement).src = defaultPoster; }} />
-                    )}
+            {filteredFeed.map((c:any) => {
+              const api = (window as any).tmdbApi;
+              const posterSrc = c.poster_full ? c.poster_full : (c.poster_path ? (api && api.imageUrl ? api.imageUrl(c.poster_path, 'original') : `https://image.tmdb.org/t/p/original${c.poster_path}`)
+                : c.backdrop_path ? (api && api.imageUrl ? api.imageUrl(c.backdrop_path, 'original') : `https://image.tmdb.org/t/p/original${c.backdrop_path}`)
+                : defaultPoster);
+              return (
+                <div key={c.id} className="movie-card" role="button" tabIndex={0} onClick={() => setSelectedCollection(c.id)}>
+                  <div className="movie-overlay">
+                      {c._placeholder ? (
+                        <div style={{width:'100%',height:240,background:'#222',display:'flex',alignItems:'center',justifyContent:'center',color:'#888'}}>Loading...</div>
+                      ) : (
+                        <img className="movie-poster" src={posterSrc} alt={c.name || `Collection ${c.id}`} loading="lazy" onError={(e) => { (e.currentTarget as HTMLImageElement).src = defaultPoster; }} />
+                      )}
+                    </div>
+                  <div className="movie-info">
+                    <div style={{fontSize:13,fontWeight:700,color:'#fff'}}>{c.name || `Collection ${c.id}`}</div>
                   </div>
-                <div className="movie-info">
-                  <div style={{fontSize:13,fontWeight:700,color:'#fff'}}>{c.name || `Collection ${c.id}`}</div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <InfiniteScroll
@@ -281,20 +298,26 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSele
             endMessage={<div style={{color:'var(--muted)', padding:12, textAlign:'center'}}>No more collections in feed.</div>}
           >
             <div className="movie-grid" style={{gridTemplateColumns:'repeat(auto-fill, minmax(160px, 1fr))', paddingBottom:20}}>
-              {feedCollections.map((c:any) => (
-                <div key={c.id} className="movie-card" role="button" tabIndex={0} onClick={() => setSelectedCollection(c.id)}>
-                  <div className="movie-overlay">
-                    {c._placeholder ? (
-                      <div style={{width:'100%',height:240,background:'#222',display:'flex',alignItems:'center',justifyContent:'center',color:'#888'}}>Loading...</div>
-                    ) : (
-                      <img className="movie-poster" src={c.poster_path ? `https://image.tmdb.org/t/p/w300${c.poster_path}` : c.backdrop_path ? `https://image.tmdb.org/t/p/w300${c.backdrop_path}` : undefined} alt={c.name || `Collection ${c.id}`} />
-                    )}
+              {feedCollections.map((c:any) => {
+                const api = (window as any).tmdbApi;
+                const posterSrc = c.poster_full ? c.poster_full : (c.poster_path ? (api && api.imageUrl ? api.imageUrl(c.poster_path, 'original') : `https://image.tmdb.org/t/p/original${c.poster_path}`)
+                  : c.backdrop_path ? (api && api.imageUrl ? api.imageUrl(c.backdrop_path, 'original') : `https://image.tmdb.org/t/p/original${c.backdrop_path}`)
+                  : defaultPoster);
+                return (
+                  <div key={c.id} className="movie-card" role="button" tabIndex={0} onClick={() => setSelectedCollection(c.id)}>
+                    <div className="movie-overlay">
+                      {c._placeholder ? (
+                        <div style={{width:'100%',height:240,background:'#222',display:'flex',alignItems:'center',justifyContent:'center',color:'#888'}}>Loading...</div>
+                      ) : (
+                        <img className="movie-poster" src={posterSrc} alt={c.name || `Collection ${c.id}`} loading="lazy" onError={(e) => { (e.currentTarget as HTMLImageElement).src = defaultPoster; }} />
+                      )}
+                    </div>
+                    <div className="movie-info">
+                      <div style={{fontSize:13,fontWeight:700,color:'#fff'}}>{c.name || `Collection ${c.id}`}</div>
+                    </div>
                   </div>
-                  <div className="movie-info">
-                    <div style={{fontSize:13,fontWeight:700,color:'#fff'}}>{c.name || `Collection ${c.id}`}</div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </InfiniteScroll>
         )}

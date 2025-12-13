@@ -462,14 +462,15 @@ ipcMain.handle('tmdb-exports-getCollectionsFeed', async (event, opts: { tryDays?
       const end = start + perPage;
       const pageIds = fallbackIds.slice(start, end);
       const hasMore = end < fallbackIds.length;
-      console.log('tmdb-exports-getCollectionsFeed: fallback returning', pageIds.length, 'ids for page', page);
-      return { ids: pageIds, hasMore };
+      const pageItems = pageIds.map(id => ({ id, name: undefined }));
+      console.log('tmdb-exports-getCollectionsFeed: fallback returning', pageItems.length, 'items for page', page);
+      return { items: pageItems, hasMore };
     }
 
     console.log('Found export:', exportUrl);
 
-    // Stream-download -> gunzip -> parse NDJSON line-by-line to collect ids
-    const ids: number[] = [];
+    // Stream-download -> gunzip -> parse NDJSON line-by-line to collect ids and names
+    const items: {id: number, name?: string}[] = [];
     await new Promise<void>((resolve, reject) => {
       try {
         const u = new URL(exportUrl);
@@ -483,7 +484,9 @@ ipcMain.handle('tmdb-exports-getCollectionsFeed', async (event, opts: { tryDays?
             if (!line) return;
             try {
               const obj = JSON.parse(line);
-              if (obj && typeof obj.id === 'number') ids.push(obj.id);
+              if (obj && typeof obj.id === 'number') {
+                items.push({ id: obj.id, name: obj.name || obj.title });
+              }
             } catch (err) {
               // ignore malformed lines
             }
@@ -495,15 +498,106 @@ ipcMain.handle('tmdb-exports-getCollectionsFeed', async (event, opts: { tryDays?
       } catch (err) { reject(err); }
     });
 
-    // Paginate ids and return — renderer will fetch details with controlled concurrency
+    // Paginate items and return — renderer will search for details using name
     const start = (page - 1) * perPage;
     const end = start + perPage;
-    const pageIds = ids.slice(start, end);
-    const hasMore = end < ids.length;
-    console.log('tmdb-exports-getCollectionsFeed: returning', pageIds.length, 'ids for page', page, 'sample:', pageIds.slice(0, 6));
-    return { ids: pageIds, hasMore };
+    const pageItems = items.slice(start, end);
+    const hasMore = end < items.length;
+    console.log('tmdb-exports-getCollectionsFeed: returning', pageItems.length, 'items for page', page, 'sample:', pageItems.slice(0, 6));
+    return { items: pageItems, hasMore };
   } catch (e) {
     console.warn('Failed to fetch collections feed', e);
     return { error: String(e), ids: [], hasMore: false };
   }
 });
+
+  // Helper to build TMDB image url
+  function tmdbImageUrl(posterPath: string | null | undefined, size = 'w185') {
+    if (!posterPath) return null;
+    return `https://image.tmdb.org/t/p/${size}${posterPath}`;
+  }
+
+  // IPC: fetch missing details for an id (main process only — keeps API key safe)
+  ipcMain.handle('fetch-details', async (event, args: { id: number, media_type?: string }) => {
+    try {
+      const id = Number(args.id);
+      const media_type = args.media_type || 'movie';
+
+      // Obtain API key from remoteConfig or environment
+      const rc = await import(path.join(__dirname, 'utils', 'remoteConfig.js')).catch(() => null);
+      const cfg = rc && rc.getPlayerConfig ? await rc.getPlayerConfig() : null;
+      const apiKey = (cfg && cfg.tmdbApiKey) || process.env.TMDB_API_KEY;
+      if (!apiKey) throw new Error('TMDB_API_KEY not set in env or remote config');
+
+      const typePath = media_type === 'tv' ? 'tv' : media_type === 'person' ? 'person' : media_type === 'collection' ? 'collection' : 'movie';
+      const url = new URL(`https://api.themoviedb.org/3/${typePath}/${id}`);
+      url.searchParams.append('api_key', apiKey);
+      url.searchParams.append('language', 'en-US');
+
+      const lib = url.protocol === 'https:' ? https : http;
+      const data = await new Promise<any>((resolve, reject) => {
+        const req = lib.get(url.toString(), (res) => {
+          const bufs: any[] = [];
+          res.on('data', (c) => bufs.push(c));
+          res.on('end', () => {
+            try {
+              const txt = Buffer.concat(bufs).toString('utf8');
+              const json = JSON.parse(txt);
+              if (res.statusCode && res.statusCode >= 400) return reject(new Error(`TMDB ${res.statusCode}`));
+              resolve(json);
+            } catch (err) { reject(err); }
+          });
+        });
+        req.on('error', (err) => reject(err));
+      });
+
+      const title = data.title || data.name || null;
+      const poster_path = data.poster_path || data.profile_path || null;
+
+      // Ensure items table exists (some older DBs may not have it)
+      try {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS items (
+            id INTEGER PRIMARY KEY,
+            media_type TEXT,
+            adult INTEGER DEFAULT 0,
+            popularity REAL DEFAULT 0,
+            video INTEGER DEFAULT 0,
+            raw_json TEXT,
+            title TEXT,
+            poster_path TEXT
+          );
+        `);
+      } catch (e) {
+        // ignore
+      }
+
+      // Upsert into items: insert or update title/poster_path and raw_json
+      try {
+        const stmt = db.prepare(`
+          INSERT INTO items (id, media_type, title, poster_path, raw_json)
+          VALUES (@id, @media_type, @title, @poster_path, @raw_json)
+          ON CONFLICT(id) DO UPDATE SET
+            title = excluded.title,
+            poster_path = excluded.poster_path,
+            raw_json = COALESCE(excluded.raw_json, items.raw_json)
+        `);
+        stmt.run({ id, media_type, title, poster_path: poster_path, raw_json: JSON.stringify(data) });
+      } catch (err) {
+        // If ON CONFLICT syntax unsupported (older SQLite) fallback to simple UPDATE/INSERT
+        try {
+          const up = db.prepare('UPDATE items SET title = ?, poster_path = ?, raw_json = ? WHERE id = ?');
+          up.run(title, poster_path, JSON.stringify(data), id);
+          const insertIf = db.prepare('INSERT OR IGNORE INTO items (id, media_type, title, poster_path, raw_json) VALUES (?, ?, ?, ?, ?)');
+          insertIf.run(id, media_type, title, poster_path, JSON.stringify(data));
+        } catch (e) {
+          console.warn('fetch-details: failed to persist item', e);
+        }
+      }
+
+      return { title, poster_path, image_url: tmdbImageUrl(poster_path) };
+    } catch (err) {
+      console.error('fetch-details error', err);
+      return { error: String(err) };
+    }
+  });
