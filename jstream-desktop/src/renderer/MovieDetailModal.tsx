@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Text, Image, Button, Spinner } from '@chakra-ui/react';
+import { Box, Button, Spinner } from '@chakra-ui/react';
 import { fetchTMDB } from '../utils/tmdbClient';
 
 export default function MovieDetailModal({ tmdbId, onPlay }: { tmdbId?: number | null, onPlay?: (tmdbId: number) => void }) {
@@ -22,18 +22,21 @@ export default function MovieDetailModal({ tmdbId, onPlay }: { tmdbId?: number |
     })();
   }, [tmdbId]);
 
-  if (!tmdbId) return <Text>Select a movie to view details.</Text>;
+  if (!tmdbId) return <div>Select a movie to view details.</div>;
   if (loading) return <Spinner />;
-  if (!movie) return <Text>Movie not found.</Text>;
+  if (!movie) return <div>Movie not found.</div>;
 
   return (
-    <Box>
-      <Image src={movie.poster_path ? `https://image.tmdb.org/t/p/w300${movie.poster_path}` : undefined} alt={movie.title} mb={4} />
-      <Text fontSize="xl" fontWeight="bold" mb={2}>{movie.title}</Text>
-      <Text mb={2}><strong>Release Date:</strong> {movie.release_date}</Text>
-      <Text mb={2}><strong>Rating:</strong> {movie.vote_average}/10</Text>
-      <Text mb={4}>{movie.overview}</Text>
-      {onPlay && <Button colorScheme="blue" onClick={() => onPlay(tmdbId)}>Play Movie</Button>}
-    </Box>
+    <div className="detail-hero">
+      <img className="detail-poster" src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : undefined} alt={movie.title} />
+      <div className="detail-info">
+        <div className="detail-title">{movie.title}</div>
+        <div className="detail-meta">{movie.release_date} • {movie.runtime ? movie.runtime + 'm' : ''} • Rating {movie.vote_average}/10</div>
+        <div className="detail-overview">{movie.overview}</div>
+        <div style={{marginTop:16}}>
+          {onPlay && <Button colorScheme="red" onClick={() => onPlay(tmdbId)}>Play Movie</Button>}
+        </div>
+      </div>
+    </div>
   );
 }

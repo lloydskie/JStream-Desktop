@@ -23,5 +23,6 @@ test('HomeGrid renders movie cards', async () => {
       <HomeGrid />
     </ChakraProvider>
   )
-  expect(await screen.findByText('Test Movie')).toBeDefined()
+  const matches = await screen.findAllByText('Test Movie');
+  expect(matches.length).toBeGreaterThan(0);
 })

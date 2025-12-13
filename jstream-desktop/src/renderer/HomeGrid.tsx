@@ -1,108 +1,148 @@
 import React, { useEffect, useState } from "react";
-import { SimpleGrid, Box, Text, Image, Spinner, Button, Badge, IconButton } from "@chakra-ui/react";
+import { Spinner } from "@chakra-ui/react";
 import { fetchTMDB } from "../utils/tmdbClient";
+import HeroBanner from './components/HeroBanner';
+import Row from './components/Row';
 
-export default function HomeGrid({ onSelectMovie, selectedTmdbId }: { onSelectMovie?: (tmdbId: number) => void, selectedTmdbId?: number | null }) {
-  // HomeGrid
-  const [movies, setMovies] = useState<any[]>([]);
+export default function HomeGrid({ onSelectMovie, onPlayMovie, selectedTmdbId, selectedGenre }: { onSelectMovie?: (tmdbId: number, type?:'movie'|'tv') => void, onPlayMovie?: (tmdbId: number, type?:'movie'|'tv') => void, selectedTmdbId?: number | null, selectedGenre?: number | '' }) {
   const [loading, setLoading] = useState(true);
-  const [favorites, setFavorites] = useState<Record<string, boolean>>({});
+  const [featured, setFeatured] = useState<any | null>(null);
+  const [popular, setPopular] = useState<any[]>([]);
+  const [topRated, setTopRated] = useState<any[]>([]);
+  const [top10, setTop10] = useState<any[]>([]);
+  const [becauseYouWatched, setBecauseYouWatched] = useState<any[]>([]);
 
   useEffect(() => {
     (async () => {
+      setLoading(true);
       try {
-        const data = await fetchTMDB("movie/popular");
-        setMovies(data.results || []);
+        const pop = await fetchTMDB('movie/popular');
+        const rated = await fetchTMDB('movie/top_rated');
+        const popularList = (pop.results || []);
+        const ratedList = (rated.results || []);
+        const filterByGenre = (list: any[]) => {
+          if (!selectedGenre) return list;
+          return list.filter(m => Array.isArray(m.genre_ids) ? m.genre_ids.includes(selectedGenre as number) : true);
+        }
+        const primaryPopular = filterByGenre(popularList);
+        const primaryRated = filterByGenre(ratedList);
+
+        // We'll allocate feeds with strict deduplication and fill to exactly 10 items each.
+        const desired = 10;
+
+        const sources: Record<string, any[]> = {
+          top10: primaryPopular.slice(),
+          popular: primaryPopular.slice(),
+          becauseYouWatched: [],
+          topRated: primaryRated.slice(),
+        };
+
+        // becauseYouWatched - try to fetch recommendations if we have last selected
+        try{
+          const last = await (window as any).database.getPersonalization('last_selected_movie');
+          if (last) {
+            const rec = await fetchTMDB(`movie/${last}/recommendations`);
+            sources.becauseYouWatched = (rec.results || []).slice();
+          }
+        }catch(e){ /* ignore */ }
+
+        // helper to allocate without duplicates
+        const used = new Set<number>();
+        const allocate = (list: any[], count: number) => {
+          const out: any[] = [];
+          for (const m of list) {
+            if (!m || typeof m.id === 'undefined') continue;
+            if (used.has(m.id)) continue;
+            out.push(m);
+            used.add(m.id);
+            if (out.length >= count) break;
+          }
+          return out;
+        }
+
+        // initial allocation from preferred sources
+        const top10Allocated = allocate(sources.top10, desired);
+        const popularAllocated = allocate(sources.popular, desired);
+        const becauseAllocated = allocate(sources.becauseYouWatched, desired);
+        const ratedAllocated = allocate(sources.topRated, desired);
+
+        // fallback pool: merge all remaining items from sources in order
+        const fallbackPool: any[] = [];
+        for (const k of ['top10','popular','becauseYouWatched','topRated']) {
+          for (const m of sources[k]) {
+            if (m && m.id && !used.has(m.id)) fallbackPool.push(m);
+          }
+        }
+
+        // if still short, try fetching more popular pages up to a limit
+        let extraPage = 2;
+        const maxExtraPages = 3;
+        while ((top10Allocated.length < desired || popularAllocated.length < desired || becauseAllocated.length < desired || ratedAllocated.length < desired) && extraPage <= maxExtraPages) {
+          try {
+            const more = await fetchTMDB('movie/popular', { page: extraPage });
+            const moreList = filterByGenre(more.results || []);
+            for (const m of moreList) {
+              if (m && m.id && !used.has(m.id)) fallbackPool.push(m);
+            }
+          } catch (e) {
+            break;
+          }
+          extraPage++;
+        }
+
+        // fill up each feed from fallback pool while respecting dedupe
+        const takeFromFallback = (arr: any[], count: number) => {
+          while (arr.length < count && fallbackPool.length > 0) {
+            const candidate = fallbackPool.shift();
+            if (!candidate || used.has(candidate.id)) continue;
+            arr.push(candidate);
+            used.add(candidate.id);
+          }
+        }
+
+        takeFromFallback(top10Allocated, desired);
+        takeFromFallback(popularAllocated, desired);
+        takeFromFallback(becauseAllocated, desired);
+        takeFromFallback(ratedAllocated, desired);
+
+        // set state (slice to desired to be safe)
+        setTop10(top10Allocated.slice(0, desired));
+        setPopular(popularAllocated.slice(0, desired));
+        setBecauseYouWatched(becauseAllocated.slice(0, desired));
+        setTopRated(ratedAllocated.slice(0, desired));
+        setFeatured((primaryPopular[0]) || null);
+        // because you watched -> if last_selected_movie exists, fetch recommendations
+        try{
+          const last = await (window as any).database.getPersonalization('last_selected_movie');
+          if (last) {
+            const rec = await fetchTMDB(`movie/${last}/recommendations`);
+            setBecauseYouWatched(rec.results?.slice(0,20) || []);
+          }
+        }catch(e){/* ignore */}
       } catch (err) {
-        console.error('Failed to load popular movies:', err);
+        console.error('Failed to load movie sections:', err);
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const rows: any[] = await (window as any).database.favoritesList();
-        const map: Record<string, boolean> = {};
-        rows.forEach(r => { if (r && r.item_id) map[r.item_id] = true; });
-        setFavorites(map);
-      } catch (e) {
-        console.error('Failed to load favorites', e);
-      }
-    })();
-  }, []);
+  }, [selectedGenre]);
 
   return (
-    <Box>
-      <Text fontSize="2xl" mb={4}>Popular Movies</Text>
+    <div className="app-shell">
       {loading && <Spinner />}
-      {movies.length === 0 && !loading ? (
-        <Box p={6} borderWidth={1} borderRadius="md">
-          <Text fontSize="xl">Welcome to JStream</Text>
-          <Text mt={2}>Browse popular movies or use search to find titles.</Text>
-        </Box>
-      ) : (
-        <SimpleGrid columns={[1, 2, 3, 4]} spacing={4}>
-          {movies.map(movie => {
-            const selected = selectedTmdbId === movie.id;
-            return (
-              <Box
-                key={movie.id}
-                borderWidth={selected ? 2 : 1}
-                borderColor={selected ? 'blue.400' : 'gray.200'}
-                borderRadius="md"
-                p={2}
-                bg={selected ? 'blue.50' : 'white'}
-                cursor={onSelectMovie ? 'pointer' : 'default'}
-                tabIndex={0}
-                role="button"
-                onKeyDown={async (e) => {
-                  if (e.key === 'Enter' && onSelectMovie) onSelectMovie(movie.id);
-                  if (e.key === 'f') {
-                    try {
-                      if (favorites[movie.id]) {
-                        await (window as any).database.favoritesRemove(String(movie.id), 'movie');
-                        setFavorites(prev => ({ ...prev, [movie.id]: false }));
-                      } else {
-                        await (window as any).database.favoritesAdd(String(movie.id), 'movie');
-                        setFavorites(prev => ({ ...prev, [movie.id]: true }));
-                      }
-                    } catch (err) { console.error('Failed to toggle favorite', err); }
-                  }
-                }}
-              >
-                <Image src={movie.poster_path ? `https://image.tmdb.org/t/p/w200${movie.poster_path}` : undefined} alt={movie.title} mb={2} />
-                <Text fontWeight="bold">{movie.title}</Text>
-                <Text fontSize="sm">{movie.release_date}</Text>
-                <Text noOfLines={2}>{movie.overview}</Text>
-                <Box display='flex' gap={2} alignItems='center' mt={2}>
-                  {onSelectMovie && <Button colorScheme="blue" onClick={() => onSelectMovie(movie.id)} aria-label={'Play ' + movie.title}>Play</Button>}
-                  <IconButton
-                    aria-label={'Favorite ' + movie.title}
-                    icon={<span style={{fontSize: 14}}>★</span>}
-                    aria-pressed={!!favorites[movie.id]}
-                    colorScheme={favorites[movie.id] ? 'yellow' : 'gray'}
-                    onClick={async () => {
-                      try {
-                        if (favorites[movie.id]) {
-                          await (window as any).database.favoritesRemove(String(movie.id), 'movie');
-                          setFavorites(prev => ({ ...prev, [movie.id]: false }));
-                        } else {
-                          await (window as any).database.favoritesAdd(String(movie.id), 'movie');
-                          setFavorites(prev => ({ ...prev, [movie.id]: true }));
-                        }
-                      } catch (e) { console.error('Failed to toggle favorite', e); }
-                    }}
-                  />
-                  {selected && <Badge>Now Playing</Badge>}
-                </Box>
-              </Box>
-            );
-          })}
-        </SimpleGrid>
-      )}
-    </Box>
+      {featured && <HeroBanner movie={featured} onPlay={onPlayMovie || onSelectMovie} onMore={onSelectMovie} />}
+
+      <Row title="Top 10" movies={top10} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />
+      <Row title="Popular on JStream" movies={popular} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />
+      {becauseYouWatched.length > 0 && <Row title="Because you watched" movies={becauseYouWatched} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />}
+      <Row title="Top Rated" movies={topRated} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />
+
+      <div className="bottom-nav">
+        <button>Home</button>
+        <button>Coming Soon</button>
+        <button>Downloads</button>
+        <button>Search</button>
+      </div>
+    </div>
   );
 }

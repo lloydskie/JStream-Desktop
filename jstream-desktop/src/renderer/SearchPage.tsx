@@ -1,99 +1,129 @@
-import React, { useState, useEffect } from "react";
-import { Input, Button, SimpleGrid, Box, Text, Image, Spinner, Badge, IconButton } from "@chakra-ui/react";
-import { fetchTMDB } from "../utils/tmdbClient";
+import React, { useEffect, useState, useRef } from 'react';
+import { Box, Button, Spinner } from '@chakra-ui/react';
+import CustomSelect from './components/CustomSelect';
+import { fetchTMDB } from '../utils/tmdbClient';
 
-export default function SearchPage({ onSelectMovie, selectedTmdbId }: { onSelectMovie?: (tmdbId: number) => void, selectedTmdbId?: number | null }) {
-  const [query, setQuery] = useState("");
+export default function SearchPage({ movieGenres = [], tvGenres = [], onSelectMovie, onPlayMovie }: { movieGenres?: any[], tvGenres?: any[], onSelectMovie?: (id:number, type?:'movie'|'tv')=>void, onPlayMovie?: (id:number|string, type?:'movie'|'tv', params?:Record<string,any>)=>void }) {
+  const [query, setQuery] = useState('');
+  const [mediaType, setMediaType] = useState<'all'|'movie'|'tv'>('all');
+  const [genre, setGenre] = useState<number | ''>('');
+  const [year, setYear] = useState<string>('');
+  const [sort, setSort] = useState<'popularity.desc'|'release_date.desc'|'release_date.asc'>('popularity.desc');
+
   const [results, setResults] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [favorites, setFavorites] = useState<Record<string, boolean>>({});
+  const [hasMore, setHasMore] = useState(true);
 
-  async function handleSearch() {
-    setLoading(true);
-    try {
-      const data = await fetchTMDB("search/movie", { query });
-      setResults(data.results || []);
-    } catch (err) {
-      console.error('Search failed:', err);
-      setResults([]);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const containerRef = useRef<HTMLDivElement|null>(null);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const rows: any[] = await (window as any).database.favoritesList();
-        const map: Record<string, boolean> = {};
-        rows.forEach(r => { if (r && r.item_id) map[r.item_id] = true; });
-        setFavorites(map);
-      } catch (e) {
-        console.error('Failed to load favorites', e);
+    setResults([]); setPage(1); setHasMore(true);
+    if (!query || query.trim().length === 0) return;
+    // debounce and ignore stale responses using queryId
+    const DEBOUNCE_MS = 350;
+    const currentQueryId = ++lastQueryIdRef.current;
+    const t = setTimeout(() => {
+      loadPage(1, true, currentQueryId);
+    }, DEBOUNCE_MS);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, mediaType, genre, year, sort]);
+
+  // lastQueryIdRef tracks the most recent query launched so we can ignore stale responses
+  const lastQueryIdRef = React.useRef(0);
+
+  async function loadPage(p:number, replace=false, queryId?: number){
+    if (!hasMore && !replace) return;
+    setLoading(true);
+    try{
+      // use search/multi for broad search, fallback to search/movie or search/tv when mediaType specified
+      let res:any = null;
+      const params: Record<string, any> = { query, page: p, include_adult: false };
+      if (year) params['year'] = year;
+      if (mediaType === 'movie') {
+        if (genre) params['with_genres'] = genre;
+        res = await fetchTMDB('search/movie', params);
+      } else if (mediaType === 'tv') {
+        if (genre) params['with_genres'] = genre;
+        res = await fetchTMDB('search/tv', params);
+      } else {
+        res = await fetchTMDB('search/multi', params);
       }
-    })();
-  }, []);
+
+      // If this response is stale, ignore it
+      if (typeof queryId !== 'undefined' && queryId !== lastQueryIdRef.current) {
+        return;
+      }
+
+      const items = (res.results || []).map((it:any) => {
+        // normalize title/date
+        return {
+          id: it.id,
+          media_type: it.media_type || (it.title ? 'movie' : 'tv'),
+          title: it.title || it.name,
+          poster_path: it.poster_path || it.backdrop_path,
+          release_date: it.release_date || it.first_air_date,
+        };
+      });
+      if (!items) return;
+      if (replace) setResults(items);
+      else setResults(prev => [...prev, ...items]);
+      setHasMore((res.page || p) < (res.total_pages || 999));
+      setPage(p);
+    }catch(e){ console.error('Search failed', e); }
+    finally{ setLoading(false); }
+  }
+
+  // infinite scroll inside container
+  useEffect(()=>{
+    const el = containerRef.current;
+    if (!el) return;
+    function onScroll(){
+      if (loading || !hasMore) return;
+      const threshold = 300;
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < threshold) {
+        loadPage(page+1);
+      }
+    }
+    el.addEventListener('scroll', onScroll);
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [loading, hasMore, page]);
+
+  const genreOptions = mediaType === 'tv' ? tvGenres : movieGenres;
 
   return (
     <Box>
-      <Text fontSize="2xl" mb={4}>Search Movies</Text>
-      <Box display="flex" mb={4} gap={2}>
-        <Input
-          placeholder="Search for a movie..."
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && handleSearch()}
-        />
-        <Button onClick={handleSearch} colorScheme="blue">Search</Button>
-      </Box>
-      {loading && <Spinner />}
-      <SimpleGrid columns={[1, 2, 3, 4]} spacing={4}>
-        {results.map(movie => {
-          const selected = selectedTmdbId === movie.id;
-          return (
-            <Box key={movie.id} borderWidth={selected ? 2 : 1} borderColor={selected ? 'blue.400' : 'gray.200'} borderRadius="md" p={2} bg={selected ? 'blue.50' : 'white'} cursor={onSelectMovie ? 'pointer' : 'default'} tabIndex={0} role="button" onKeyDown={async (e) => {
-              if (e.key === 'Enter' && onSelectMovie) onSelectMovie(movie.id);
-              if (e.key === 'f') {
-                try {
-                  if (favorites[movie.id]) {
-                    await (window as any).database.favoritesRemove(String(movie.id), 'movie');
-                    setFavorites(prev => ({ ...prev, [movie.id]: false }));
-                  } else {
-                    await (window as any).database.favoritesAdd(String(movie.id), 'movie');
-                    setFavorites(prev => ({ ...prev, [movie.id]: true }));
-                  }
-                } catch (err) { console.error('Failed to toggle favorite', err); }
-              }
-            }}>
-              <Image src={movie.poster_path ? `https://image.tmdb.org/t/p/w200${movie.poster_path}` : undefined} alt={movie.title} mb={2} />
-              <Text fontWeight="bold">{movie.title}</Text>
-              <Text fontSize="sm">{movie.release_date}</Text>
-              <Text noOfLines={2}>{movie.overview}</Text>
-              <Box display='flex' gap={2} alignItems='center' mt={2}>
-                {onSelectMovie && <Button colorScheme="blue" onClick={() => onSelectMovie(movie.id)} aria-label={'Play ' + movie.title}>Play</Button>}
-                <IconButton
-                  aria-label={'Favorite ' + movie.title}
-                  icon={<span style={{fontSize: 14}}>★</span>}
-                  aria-pressed={!!favorites[movie.id]}
-                  colorScheme={favorites[movie.id] ? 'yellow' : 'gray'}
-                  onClick={async () => {
-                    try {
-                      if (favorites[movie.id]) {
-                        await (window as any).database.favoritesRemove(String(movie.id), 'movie');
-                        setFavorites(prev => ({ ...prev, [movie.id]: false }));
-                      } else {
-                        await (window as any).database.favoritesAdd(String(movie.id), 'movie');
-                        setFavorites(prev => ({ ...prev, [movie.id]: true }));
-                      }
-                    } catch (e) { console.error('Failed to toggle favorite', e); }
-                  }}
-                />
-                {selected && <Badge>Now Playing</Badge>}
-              </Box>
-            </Box>
-          );
-        })}
-      </SimpleGrid>
+      <div className="search-controls">
+        <input className="search-input input" placeholder="Search movies, shows..." value={query} onChange={e=>setQuery(e.target.value)} style={{flex:1}} />
+        <CustomSelect id="mediaType" value={mediaType} onChange={(v)=> setMediaType(String(v) as any)} options={[{value:'all',label:'All'},{value:'movie',label:'Movies'},{value:'tv',label:'TV Shows'}]} />
+        <CustomSelect id="genre" value={genre as any} onChange={(v)=> setGenre(v ? Number(v) : '')} placeholder="All genres" options={[{value:'',label:'All genres'}, ...(genreOptions || []).map((g:any)=> ({ value: g.id, label: g.name }))]} />
+        <input className="input" placeholder="Year" value={year} onChange={e=>setYear(e.target.value)} style={{width:80}} />
+        <CustomSelect id="sort" value={sort} onChange={(v)=> setSort(String(v) as any)} options={[{value:'popularity.desc',label:'Most popular'},{value:'release_date.desc',label:'Newest'},{value:'release_date.asc',label:'Oldest'}]} />
+      </div>
+
+      <div ref={containerRef} style={{height:'70vh', overflow:'auto', overscrollBehavior:'contain'}}>
+        <div className="movie-grid" style={{gridTemplateColumns:'repeat(auto-fill, minmax(160px, 1fr))', paddingBottom:20}}>
+          {results.map(r => (
+            <div key={`${r.media_type}-${r.id}`} className="movie-card" role="button" tabIndex={0} onClick={() => onSelectMovie && onSelectMovie(r.id, r.media_type === 'tv' ? 'tv' : 'movie')}>
+              <div className="movie-overlay">
+                <img className="movie-poster" src={r.poster_path ? `https://image.tmdb.org/t/p/w300${r.poster_path}` : undefined} alt={r.title} />
+                <div className="play-overlay" onClick={(ev)=>{ ev.stopPropagation(); if (onPlayMovie) onPlayMovie(r.id, r.media_type === 'tv' ? 'tv' : 'movie', { tmdbId: r.id }); }}>
+                  <div className="play-circle"><div className="play-triangle"/></div>
+                </div>
+              </div>
+              <div className="movie-info">
+                <div style={{fontWeight:700}}>{r.title}</div>
+                <div style={{fontSize:12,color:'var(--muted)'}}>{r.release_date}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {loading && <div style={{padding:12}}><Spinner /></div>}
+        {!loading && results.length === 0 && <div style={{padding:12,color:'var(--muted)'}}>No results — try a different query or filters.</div>}
+        {!hasMore && results.length > 0 && <div style={{padding:12,color:'var(--muted)'}}>End of results</div>}
+      </div>
     </Box>
   );
 }
+

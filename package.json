@@ -1,0 +1,13 @@
+{
+  "name": "jstream-desktop-root",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "npm --prefix ./jstream-desktop run dev",
+    "start": "npm --prefix ./jstream-desktop run start",
+    "test": "npm --prefix ./jstream-desktop run test"
+  },
+  "dependencies": {
+    "pako": "^2.1.0"
+  }
+}

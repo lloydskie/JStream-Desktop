@@ -46,6 +46,12 @@ const createTables = () => {
   } catch (e) {
     // ignore - column already exists
   }
+  try {
+    // Ensure watch_history has a position column for resume support (migrate older DBs)
+    db.exec(`ALTER TABLE watch_history ADD COLUMN position REAL DEFAULT 0;`);
+  } catch (e) {
+    // ignore - column already exists or table missing
+  }
 };
 
 createTables();

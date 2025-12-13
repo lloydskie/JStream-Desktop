@@ -5,7 +5,11 @@
   "description": "My Electron application description",
   "main": ".vite/build/main.js",
   "scripts": {
-    "test": "vitest"
+    "test": "vitest",
+    "dev": "electron-forge start",
+    "start": "electron-forge start",
+    "storybook": "start-storybook -p 6006",
+    "build-storybook": "build-storybook"
   },
   "keywords": [],
   "author": {
@@ -49,7 +53,9 @@
     "electron-squirrel-startup": "^1.0.1",
     "firebase": "^12.6.0",
     "framer-motion": "^12.23.26",
+    "pako": "^2.1.0",
     "react": "^19.2.1",
-    "react-dom": "^19.2.1"
+    "react-dom": "^19.2.1",
+    "react-infinite-scroll-component": "^6.1.1"
   }
 }

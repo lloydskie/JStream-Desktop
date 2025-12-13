@@ -1,0 +1,26 @@
+## Sample ad host and URL substrings for blocking
+ads.example.com
+doubleclick.net
+googlesyndication.com
+adservice.google.com
+adserver
+adsystem
+tracker
+
+## Cosmetic selectors (plain selectors will be managed via IPC, kept here for reference)
+/* .ad-banner, iframe[src*="ads"], [data-ad] */
+
+## User-requested blocking rules (from request)
+||et.neemdeputy.com^
+et.neemdeputy.com/rOuuAPzTNmrC0rCZN/MWOww
+||wd.killigentropy.com/rm4BgIdXGCc/oeJgj$script,domain=player.videasy.net
+https://wd.killigentropy.com/rm4BgIdXGCc/oeJgj
+https://wd.killigentropy.com/rm4BgIdXGCc/
+https://wd.killigentropy.com
+
+## Normalized equivalents for the simple matcher
+et.neemdeputy.com
+wd.killigentropy.com
+https://wd.killigentropy.com/rm4BgIdXGCc/oeJgj
+et.neemdeputy.com/rOuuAPzTNmrC0rCZN/MWOww
+

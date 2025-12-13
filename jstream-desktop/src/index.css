@@ -1,8 +1,436 @@
-body {
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
-    sans-serif;
-  margin: auto;
-  max-width: 38rem;
-  padding: 2rem;
+:root{
+  --bg:#0b0f14;
+  --surface:#111316;
+  --card:#16181c;
+  --accent:#e50914; /* Netflix red */
+  --muted:#9aa3ad;
+  --glass: rgba(255,255,255,0.04);
+  --poster-small: 180px;
+  --poster-medium: 220px;
+  --poster-large: 300px;
 }
+
+*{box-sizing:border-box}
+html,body,#root{height:100%; min-height:100%}
+/* Full-page persistent background using a fixed pseudo-element so scrolling never cuts it off */
+html::before{
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -9999;
+  pointer-events: none;
+  background: linear-gradient(180deg, var(--bg) 0%, #070809 100%);
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+html, body, #root { background: transparent; }
+body{
+  margin:0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  /* keep body background transparent so the html pseudo-element shows through */
+  background-color: transparent;
+  color: #fff;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}
+
+.app-shell{
+  padding: 24px 28px;
+  max-width: 1400px;
+  margin: 0 auto;
+  min-height: 100vh; /* ensure content area fills viewport */
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+}
+
+.app-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:18px;
+}
+
+/* place top-nav centered between brand and header-controls */
+.app-header .top-nav{ flex:1; display:flex; justify-content:center; align-items:center; }
+.app-header .brand{ flex:0 0 auto; }
+.app-header .header-controls{ flex:0 0 auto; }
+
+.brand{
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+.brand .logo{
+  font-weight:800;
+  color:var(--accent);
+  font-size:28px;
+  letter-spacing:1px;
+}
+.brand .title{font-size:14px;color:var(--muted)}
+
+/* hamburger menu button: hidden on large screens, visible on tablet and mobile */
+.app-header .hamburger{ display:none !important; }
+@media (max-width: 1024px){
+  .app-header .hamburger{ display:inline-flex !important; align-items:center; justify-content:center; padding:8px; border-radius:6px; }
+}
+
+.movie-grid{
+  display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap:18px;
+  align-items:start;
+}
+
+.movie-card{
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.18));
+  border-radius:8px;
+  overflow:hidden;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+  cursor:pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.03);
+  display:flex;
+  flex-direction:column;
+}
+.movie-card:hover{ transform: translateY(-6px) scale(1.02); box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
+
+/* Accent hover / focus effects using Netflix red */
+.movie-card{
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+  border: 1px solid rgba(255,255,255,0.03);
+}
+.movie-card:hover, .movie-card:focus {
+  transform: translateY(-6px) scale(1.02);
+  box-shadow: 0 18px 40px rgba(229,9,20,0.12);
+  border-color: rgba(229,9,20,0.18);
+}
+.movie-card:focus-visible{
+  outline: none;
+  box-shadow: 0 20px 50px rgba(229,9,20,0.18), 0 6px 18px rgba(0,0,0,0.6);
+  border-color: rgba(229,9,20,0.28);
+}
+
+/* Play circle accent on hover */
+.movie-card:hover .play-circle, .movie-card:focus .play-circle{ border-color: rgba(229,9,20,0.95); box-shadow: 0 6px 18px rgba(229,9,20,0.12); }
+
+/* Tab hover/focus effects */
+.top-nav [role="tab"]:hover{ background: rgba(229,9,20,0.06); color: #fff; }
+.top-nav [role="tab"]:focus-visible{ box-shadow: 0 6px 18px rgba(229,9,20,0.08); outline: none; border-radius:8px; }
+
+/* Small visual lift for focused items in rows for keyboard users */
+.row-scroll .movie-card:focus-visible{ transform: translateY(-4px) scale(1.01); box-shadow: 0 12px 30px rgba(229,9,20,0.08); }
+
+.movie-poster{ width:100%; height:var(--poster-medium); display:block; object-fit:cover; background:#222 }
+.movie-info{ padding:12px; flex:1; display:flex; flex-direction:column; justify-content:space-between }
+.movie-title{ font-size:14px; font-weight:700; margin-bottom:6px; color:#fff }
+.movie-info{ padding:12px }
+.movie-title{ font-size:14px; font-weight:700; margin-bottom:6px; color:#fff }
+.movie-meta{ font-size:12px; color:var(--muted); margin-bottom:8px }
+.movie-overview{ font-size:13px; color:#c7c7c7; opacity:0.9 }
+
+.card-actions{ display:flex; gap:8px; align-items:center; margin-top:10px }
+.play-cta{ background:var(--accent); color:#fff; border-radius:6px; padding:6px 10px; font-weight:600; font-size:13px }
+.fav-btn{ background:transparent; color:var(--muted); border:none; font-size:16px }
+.now-badge{ background:var(--accent); color:#fff; padding:4px 6px; border-radius:4px; font-size:11px }
+
+/* show overlay play icon on hover */
+.movie-overlay{ position:relative }
+.movie-overlay .play-overlay{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity 150ms ease }
+.movie-card:hover .play-overlay{ opacity:1; background: linear-gradient(180deg, rgba(0,0,0,0.0), rgba(0,0,0,0.4)) }
+/* Also show overlay when hovering the movie-overlay itself (covers items that aren't wrapped in .movie-card) */
+.movie-overlay:hover .play-overlay{ opacity:1; background: linear-gradient(180deg, rgba(0,0,0,0.0), rgba(0,0,0,0.4)) }
+.play-overlay{ cursor: pointer; z-index: 2 }
+.play-circle{ background: var(--accent); border:2px solid var(--accent); width:56px; height:56px; border-radius:50%; display:flex; align-items:center; justify-content:center }
+.play-triangle{ width:0; height:0; border-left:14px solid #fff; border-top:9px solid transparent; border-bottom:9px solid transparent; margin-left:4px }
+
+/* responsive poster sizes */
+@media (min-width: 900px){ .movie-poster{ height:var(--poster-large) } }
+@media (min-width: 1200px){ .movie-poster{ height:var(--poster-large) } }
+
+/* Carousel (row) specific sizing to keep cards uniform */
+.row-scroll .movie-card{ min-width:200px; max-width:220px; flex:0 0 220px }
+.row-scroll .movie-poster{ height:260px }
+.row-scroll .movie-info{ padding:10px }
+
+/* smaller card variant used in compact grids/rows */
+.movie-card.small{ min-width:150px; max-width:150px; margin-right:10px }
+
+/* Search / grid results sizing */
+.movie-grid .movie-card{ min-width:140px }
+.movie-grid .movie-poster{ height:var(--poster-medium) }
+
+/* small screen tweaks */
+@media (max-width: 480px){ .app-shell{ padding:12px } .movie-grid{ gap:10px } }
+
+/* Detail view */
+.detail-hero{ display:flex; gap:18px; align-items:flex-start; margin-bottom:18px }
+.detail-poster{ width:260px; border-radius:8px; object-fit:cover }
+.detail-info{ flex:1 }
+.detail-title{ font-size:24px; font-weight:800; margin-bottom:8px }
+.detail-meta{ color:var(--muted); margin-bottom:12px }
+.detail-overview{ color:#d7d7d7; line-height:1.4 }
+
+/* Prevent horizontal overflow from hero details (cast row) */
+.app-shell{ overflow-x: hidden; }
+.detail-info{ max-width: calc(100% - 300px); }
+
+.cast-row{ display:flex; gap:12px; overflow-x:auto; align-items:center; padding-bottom:6px }
+.cast-item{ background:transparent; border:none; cursor:pointer; width:100px; min-width:100px; display:flex; flex-direction:column; align-items:center; text-align:center }
+.cast-item img{ width:88px; height:88px; object-fit:cover; border-radius:50% }
+.cast-name{ font-size:12px; margin-top:8px; font-weight:600; line-height:1.1 }
+.cast-role{ font-size:11px; color:var(--muted) }
+
+@media (max-width: 900px){
+  .detail-hero{ flex-direction:column }
+  .detail-info{ max-width: 100% }
+  .detail-poster{ width:100%; max-width:320px }
+}
+
+/* Position the top navigation 'on' the header and center it relative to the viewport */
+.app-header{ position: relative; min-height:64px; align-items:center }
+/* center the nav in the header */
+.top-nav{ position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 5 }
+.top-nav [role="tablist"]{ display:flex; gap:18px; align-items:center }
+/* Ensure tabs have consistent height and vertical centering across breakpoints */
+.top-nav [role="tab"]{ display:inline-flex; align-items:center; justify-content:center; height:44px; min-height:44px; padding:6px 14px; line-height:1 }
+
+/* focused row for keyboard navigation */
+.focused-row{ outline: 2px solid rgba(229,9,20,0.15); box-shadow: 0 8px 30px rgba(229,9,20,0.08); transform: translateY(-4px) }
+
+/* carousel / row peek animation */
+.row-container{ margin-bottom:28px }
+.row-title{ font-size:16px; font-weight:700; margin:6px 0 10px 4px }
+.row-scroll{ display:flex; gap:12px; overflow:auto; padding-bottom:6px }
+.row-scroll::-webkit-scrollbar{ height:8px }
+.row-scroll::-webkit-scrollbar-thumb{ background:rgba(255,255,255,0.06); border-radius:6px }
+
+/* ensure scroll is captured by the scroller under the pointer instead of bubbling to the page */
+.row-scroll, .movie-grid, .detail-sections, .search-dropdown{ overscroll-behavior: contain; }
+
+/* hero banner */
+.hero-banner{ position:relative; height:56vh; min-height:380px; border-radius:10px; background-size:cover; background-position:center; margin-bottom:20px; overflow:hidden }
+.hero-overlay{ width:100%; height:100%; background: linear-gradient(180deg, rgba(0,0,0,0.15) 10%, rgba(0,0,0,0.6) 60%); display:flex; align-items:flex-end }
+.hero-content{ padding:36px; max-width:720px }
+.hero-title{ font-size:40px; font-weight:800; margin:0 0 12px 0 }
+.hero-overview{ color: #e6e6e6; max-height:72px; overflow:hidden; margin-bottom:16px }
+.hero-actions{ display:flex; gap:12px }
+
+/* Netflix-themed interactive elements: buttons, dropdowns, inputs, and filter pills */
+.button, .btn { display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:6px; background:rgba(255,255,255,0.04); color:#fff; border:1px solid rgba(255,255,255,0.04); cursor:pointer; transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease; }
+.button.primary, .btn-primary, .play-cta{ background:var(--accent); color:#fff; border-color: rgba(229,9,20,0.2); box-shadow: 0 6px 18px rgba(229,9,20,0.08); }
+.button.primary:hover, .btn-primary:hover{ transform: translateY(-3px); box-shadow: 0 12px 30px rgba(229,9,20,0.12); filter:brightness(1.02); }
+.button.ghost{ background:transparent; border:1px solid rgba(255,255,255,0.06); color:#fff; }
+.button:focus-visible{ outline: none; box-shadow: 0 6px 18px rgba(229,9,20,0.12), 0 0 0 3px rgba(229,9,20,0.06); border-color: rgba(229,9,20,0.2); }
+
+/* Global button hover/active/focus styles */
+button, .button, .btn, .menu-link, .profile-btn, .hamburger, .dropdown-toggle { transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease, color 120ms ease; }
+button:hover, .button:hover, .btn:hover, .menu-link:hover, .profile-btn:hover, .hamburger:hover, .dropdown-toggle:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(0,0,0,0.5); background: rgba(255,255,255,0.04); color: #fff; }
+button:active, .button:active, .btn:active, .menu-link:active, .profile-btn:active, .hamburger:active { transform: translateY(0); box-shadow: 0 6px 18px rgba(0,0,0,0.45); }
+.menu-link{ text-decoration:none; }
+.menu-link:hover{ background: rgba(255,255,255,0.02); }
+.profile-btn:hover, .hamburger:hover{ color: #fff }
+
+/* Dropdown item hover: subtle lift and stronger accent */
+.dropdown-item{ transition: background 120ms ease, transform 120ms ease, color 120ms ease; }
+.dropdown-item:hover{ background: rgba(229,9,20,0.08); color:#fff; transform: translateX(6px); }
+.dropdown-item:active{ transform: translateX(2px); }
+.dropdown-item:focus-visible{ outline: none; box-shadow: 0 6px 18px rgba(229,9,20,0.08); }
+
+/* Global selectable highlight: apply subtle lift, accent background and focus-visible outlines
+   to interactive elements across the UI (buttons, links, cards, pills, dropdown items, cast items) */
+:is(button, a, .menu-link, .profile-btn, .hamburger, .dropdown-toggle, .button, .btn, .filter-pill, .dropdown-item, .menu-link, .cast-item, .movie-card, .movie-card.small){
+  transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+:is(button, a, .menu-link, .profile-btn, .hamburger, .dropdown-toggle, .button, .btn, .filter-pill, .dropdown-item, .cast-item, .movie-card):hover{
+  background: rgba(229,9,20,0.06);
+  color: #fff;
+  transform: translateY(-3px);
+  box-shadow: 0 14px 36px rgba(0,0,0,0.45);
+}
+
+:is(button, a, .menu-link, .profile-btn, .hamburger, .dropdown-toggle, .button, .btn, .filter-pill, .dropdown-item, .cast-item, .movie-card):active{
+  transform: translateY(0);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+}
+
+:is(button, a, .menu-link, .profile-btn, .hamburger, .dropdown-toggle, .button, .btn, .filter-pill, .dropdown-item, .cast-item, .movie-card):focus-visible{
+  outline: none;
+  box-shadow: 0 8px 30px rgba(229,9,20,0.12), 0 2px 8px rgba(0,0,0,0.5);
+  border-color: rgba(229,9,20,0.18);
+}
+
+/* Feed/tiles specific highlight (ensures internal card content doesn't get lost when hovered) */
+.movie-card .movie-info, .movie-card.small .movie-info{ transition: color 140ms ease; }
+.movie-card:hover .movie-title, .movie-card.small:hover .movie-title{ color:#fff }
+
+/* Search input: Netflix red caret + blinking highlight when focused only */
+@keyframes netflix-caret-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(229,9,20,0.10); }
+  50% { box-shadow: 0 0 0 6px rgba(229,9,20,0.06); }
+  100% { box-shadow: 0 0 0 0 rgba(229,9,20,0.00); }
+}
+
+.search-input{ caret-color: var(--accent); transition: box-shadow 180ms ease, border-color 120ms ease; }
+.search-input:focus{
+  outline: none;
+  border-color: rgba(229,9,20,0.28);
+  box-shadow: 0 6px 20px rgba(229,9,20,0.06);
+  animation: netflix-caret-pulse 1.6s infinite ease-in-out;
+}
+
+/* If not focused, keep the caret default/invisible and no highlight */
+.search-input:not(:focus){ animation: none; box-shadow: none; }
+
+/* For accessibility: visible focus ring for keyboard users */
+.search-input:focus-visible{ box-shadow: 0 6px 20px rgba(229,9,20,0.08), 0 0 0 3px rgba(229,9,20,0.04); }
+
+/* Episode list (vertical) styles */
+.episode-list{ display:flex; flex-direction:column; gap:10px }
+.episode-item{ display:flex; gap:12px; align-items:flex-start; padding:10px; border-radius:8px; cursor:pointer; background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(0,0,0,0.06)); border:1px solid rgba(255,255,255,0.02); }
+.episode-item img{ width:220px; height:124px; object-fit:cover; border-radius:6px; flex:0 0 220px }
+.episode-item .ep-info{ flex:1 }
+.episode-item:hover{ transform: translateY(-4px); background: linear-gradient(180deg, rgba(229,9,20,0.03), rgba(0,0,0,0.06)); box-shadow: 0 14px 36px rgba(0,0,0,0.45); }
+.episode-item:active{ transform: translateY(0) }
+.episode-item .ep-info .overview{ color: var(--muted); margin-top:6px }
+
+/* Player shell styles */
+.player-shell{ width:100%; height:100%; display:flex; flex-direction:column; gap:12px; background: transparent }
+.player-top{ display:flex; align-items:center; gap:12px; padding:12px 18px }
+.player-top .player-title{ color:#fff; font-weight:800; font-size:18px }
+.player-top .button.ghost{ background:transparent; border:1px solid rgba(255,255,255,0.04); color:#fff }
+.player-content{ flex:1; display:flex; align-items:center; justify-content:center }
+.player-content iframe{ width:100%; height:100%; border:0 }
+
+/* Dropdowns & contextual menus */
+.dropdown{ position:relative; }
+.dropdown-toggle{ display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:6px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04); color:#fff; cursor:pointer; }
+.dropdown-menu{ background: linear-gradient(180deg, rgba(17,17,18,0.98), rgba(8,8,9,0.98)); border-radius:8px; box-shadow:0 12px 40px rgba(0,0,0,0.6); padding:6px; z-index:1200; border:1px solid rgba(255,255,255,0.03); box-sizing: border-box; max-width:420px; }
+.dropdown-item{ padding:8px 10px; border-radius:6px; color:#e6e6e6; cursor:pointer; }
+.dropdown-item:hover{ background: rgba(229,9,20,0.06); color:#fff; }
+
+/* Ensure dropdown menu items show our dark theme even on native contexts */
+.dropdown-menu .dropdown-item{ background: transparent; color: #e6e6e6 }
+.dropdown-menu .dropdown-item[aria-selected="true"]{ background: rgba(255,255,255,0.03); box-shadow: inset 0 1px 0 rgba(255,255,255,0.02); }
+
+/* item truncation and layout */
+.dropdown-item{ white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* make portal-mounted dropdown-menu scrollable and sized well */
+.dropdown-menu{ max-height: 44vh; overflow:auto; }
+.dropdown-menu::-webkit-scrollbar{ width:10px; }
+.dropdown-menu::-webkit-scrollbar-thumb{ background: linear-gradient(180deg, var(--accent), #b30a12); border-radius:8px; }
+
+/* Filter pills used in search and genre filters */
+.filter-pill{ display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; background: rgba(255,255,255,0.03); color:#fff; border:1px solid rgba(255,255,255,0.03); cursor:pointer; }
+.filter-pill.active{ background:var(--accent); color:#fff; box-shadow: 0 8px 30px rgba(229,9,20,0.06); transform: translateY(-2px); }
+
+/* Inputs and search fields */
+.input, input, .search-input{ background: rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04); padding:8px 10px; border-radius:6px; color:#fff; }
+.input:focus, input:focus, .search-input:focus{ outline:none; box-shadow: 0 6px 18px rgba(229,9,20,0.08); border-color: rgba(229,9,20,0.18); }
+
+/* Reusable glass surface */
+.surface-card{ background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.18)); border-radius:8px; border:1px solid rgba(255,255,255,0.03); }
+/* Search control row helper */
+.search-controls{ display:flex; gap:12px; align-items:center; margin-bottom:12px }
+
+/* Native select styling to match inputs (remove native arrow and show custom one) */
+select, .genre-select, select.input{
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.04);
+  color: #fff;
+  padding: 8px 36px 8px 10px;
+  border-radius: 6px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%23ffffff' fill-opacity='0.9' d='M6 8L0 0h12z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+select::-ms-expand{ display: none; }
+
+/* Ensure selects shrink/grow similarly to inputs when inside flexible containers */
+select.search-input, select.input{ min-width: 64px }
+/* mobile bottom nav */
+.bottom-nav{ display:none }
+@media (max-width:640px){
+  .hero-banner{ height:45vh }
+  .movie-grid{ grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+  .bottom-nav{ display:flex; position:fixed; bottom:12px; left:12px; right:12px; background:rgba(0,0,0,0.5); border-radius:12px; justify-content:space-around; padding:8px 12px; z-index:999 }
+  .bottom-nav button{ background:transparent; border:none; color:#fff }
+}
+
+/* predictive search dropdown */
+.search-dropdown{ position:absolute; top:56px; right:24px; width:360px; max-height:420px; overflow:auto; background:linear-gradient(180deg, rgba(17,17,18,0.95), rgba(8,8,9,0.95)); border-radius:8px; box-shadow:0 8px 30px rgba(0,0,0,0.6); z-index:1100 }
+.search-item{ display:flex; gap:8px; padding:8px; align-items:center; cursor:pointer; border-bottom:1px solid rgba(255,255,255,0.02) }
+.search-item img{ width:48px; height:72px; object-fit:cover; border-radius:4px }
+.search-item .meta{ color:#e6e6e6 }
+.search-item .title{ font-weight:600 }
+.search-item .subtitle{ font-size:12px; color:var(--muted) }
+.search-item.active{ background:rgba(255,255,255,0.03) }
+
+/* genre dropdown */
+.genre-select{ background:transparent; color:#fff; border:1px solid rgba(255,255,255,0.06); padding:6px 8px; border-radius:6px }
+
+/* ensure genre select fills container when used in mobile menu */
+.genre-select{ width:100% }
+
+/* profile and hamburger buttons in header */
+.profile-btn, .hamburger{ background:transparent; border:none; color:var(--muted); cursor:pointer; padding:6px; border-radius:6px }
+.hamburger{ font-size:20px; color:#fff }
+
+/* mobile menu overlay surface */
+.mobile-menu-overlay{ position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:60; display:flex; flex-direction:column; padding:20px; gap:12px }
+.mobile-menu-overlay .close-btn{ background:transparent; border:none; color:#fff; font-size:20px }
+.mobile-menu-overlay .menu-link{ padding:12px; font-size:18px; text-align:left; background:transparent; border:none; color:#fff; width:100%; }
+
+/* hide the header-controls on small screens (moved into mobile menu) */
+.header-controls{ display:flex; align-items:center; gap:8px }
+@media (max-width: 1024px){ .header-controls{ display:none !important } }
+
+/* hide the top tab navigation on small screens (mobile menu will provide navigation) */
+.top-nav{ display:block }
+@media (max-width: 1024px){ .top-nav{ display:none !important } }
+
+/* Desktop nav alignment fixes */
+@media (min-width: 1025px) {
+  .top-nav{ display:flex; justify-content:center; align-items:center; width:100%; margin-bottom:12px; }
+  .top-nav [role="tablist"]{ display:flex; gap:18px; align-items:center; }
+  /* Normalize tab sizes and alignment so every nav item is the same height */
+  .top-nav [role="tab"]{
+    color: #fff;
+    /* keep font-size and visual styling; heights are set above for consistency */
+    font-size: 15px;
+  }
+  .top-nav [role="tab"][aria-selected="true"]{ background: rgba(255,255,255,0.04); color: #fff; }
+}
+
+/* Custom scrollbars — consistent, Netflix-red accent */
+*::-webkit-scrollbar{ width:10px; height:10px; }
+*::-webkit-scrollbar-track{ background: var(--surface); }
+*::-webkit-scrollbar-thumb{ background: linear-gradient(180deg, var(--accent), #b30a12); border-radius:999px; border:2px solid rgba(0,0,0,0.6); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03); }
+*::-webkit-scrollbar-thumb:hover{ filter:brightness(0.95); }
+
+/* Slightly smaller for horizontal row scrollers */
+.row-scroll::-webkit-scrollbar{ height:8px; }
+.row-scroll::-webkit-scrollbar-track{ background: var(--surface); }
+.row-scroll::-webkit-scrollbar-thumb{ border-radius:999px; }
+
+/* Search dropdown and other smaller panes */
+.search-dropdown::-webkit-scrollbar{ width:8px; }
+.search-dropdown::-webkit-scrollbar-track{ background: var(--surface); }
+.search-dropdown::-webkit-scrollbar-thumb{ background: linear-gradient(180deg, var(--accent), #b30a12); border-radius:8px; }
+
+/* Firefox support */
+*{ scrollbar-width: thin; scrollbar-color: var(--accent) var(--surface); }
+
+/* Make sure scrollbars don't clash with transparent tracks in dark UI */
+::-webkit-scrollbar-corner{ background: transparent; }
+
+
+
+
+

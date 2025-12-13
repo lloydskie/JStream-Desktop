@@ -9,7 +9,6 @@ vi.mock('../../utils/remoteConfig', () => ({
     tmdbApiKey: 'fake',
     movieBaseUrl: 'https://player.videasy.net/movie/',
     tvBaseUrl: 'https://player.videasy.net/tv/',
-    animeBaseUrl: 'https://player.videasy.net/anime/',
     defaultColor: '8B5CF6',
     enableOverlay: true,
     enableEpisodeSelector: true,
