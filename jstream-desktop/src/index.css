@@ -6,6 +6,7 @@
   --card:#121212;
   --accent:#e50914; /* Netflix red */
   --header-height: 56px;
+  --app-edge-offset: 2%;
   --muted:#9aa3ad;
   --glass: rgba(255,255,255,0.04);
   --poster-small: 180px;
@@ -401,7 +402,8 @@ body{
 /* Right-side hero mute button (separate from hero-content) */
 .hero-mute-right{
   position: absolute;
-  right: 2%;
+  /* shift the mute button inward so the certification pill can sit at the viewport edge */
+  right: calc(var(--app-edge-offset, 2%) + 64px);
   /* anchor to the hero-content bottom so it sits opposite the hero-actions row */
   bottom: calc(8% + 32px);
   z-index: 12;
@@ -423,8 +425,9 @@ body{
 /* Certification pill positioned beside the mute button */
 .hero-certification{
   position: absolute;
-  /* place to the left of the mute button which is anchored at right:2% */
-  right: calc(2% + 56px);
+  /* place at the viewport edge to the right of the mute button */
+  /* align to app edge offset; change --app-edge-offset to adjust */
+  right: var(--app-edge-offset, 2%);
   bottom: calc(8% + 32px);
   z-index: 13;
   background: rgba(0,0,0,0.56);
