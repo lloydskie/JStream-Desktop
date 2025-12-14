@@ -8,13 +8,13 @@ type FeedItem = { id: number; name: string; poster_path: MaybeString; backdrop_p
 type CollectionDetail = { id: number; name: string; poster_path: MaybeString; backdrop_path: MaybeString; poster_full: MaybeString };
 
 // Single clean implementation — no duplicated/trailing content
-export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSelectMovie?: (id:number, type?:'movie'|'tv')=>void, onPlayMovie?: (id:number|string, type?:'movie'|'tv', params?:Record<string,any>)=>void }){
+export default function CollectionsPage({ onSelectMovie, onPlayMovie, selectedCollectionId }: { onSelectMovie?: (id:number, type?:'movie'|'tv')=>void, onPlayMovie?: (id:number|string, type?:'movie'|'tv', params?:Record<string,any>)=>void, selectedCollectionId?: number }){
   const [query, setQuery] = useState('');
   const [filteredFeed, setFilteredFeed] = useState<FeedItem[]>([]);
 
   const [feedCollections, setFeedCollections] = useState<FeedItem[]>([]);
   const [feedStats, setFeedStats] = useState({ total: 0, filled: 0, placeholders: 0, failed: 0 });
-  const defaultPoster = '/assets/default_collection_poster.png';
+  const defaultPoster = '';
   const [loadingFeed, setLoadingFeed] = useState(false);
   const [feedError, setFeedError] = useState<string | null>(null);
 
@@ -48,13 +48,29 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSele
     }
   }, [feedCollections, query]);
 
+  // Handle selectedCollectionId prop changes
+  useEffect(() => {
+    if (selectedCollectionId) {
+      setSelectedCollection(selectedCollectionId);
+    }
+  }, [selectedCollectionId]);
+
   useEffect(() => {
     if (!selectedCollection) return;
     let mounted = true;
     (async () => {
       try {
         setCollectionDetails(null);
-        const res = await fetchTMDB(`collection/${selectedCollection}`);
+        const options = {
+          method: 'GET',
+          headers: {
+            accept: 'application/json',
+            Authorization: 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiI0OTc4NzEyOGRhOTRiMzU4NWIyMWRhYzVjNGE5MmZjYyIsIm5iZiI6MTc1NjQ0MjAwNi4zMjksInN1YiI6IjY4YjEyZDk2NmZkMmM0MTFiNjM5NmQ3MCIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.MEjHIvjbtHuzHUTpnwyCK6gbNKB0xY4IpSL21OEVJSI'
+          }
+        };
+        const response = await fetch(`https://api.themoviedb.org/3/collection/${selectedCollection}`, options);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const res = await response.json();
         if (!mounted) return;
         setCollectionDetails(res);
       } catch (e) {
@@ -98,7 +114,25 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSele
           let delay = 500;
           for (let i = 0; i < attempts; i++) {
             try {
-              // First try direct collection/{id} endpoint
+              // Use search/collection with the exact name first
+              const fullName = (item.name || `collection ${item.id}`).trim();
+              const encodedFull = encodeURIComponent(fullName);
+              console.log(`Searching for collection by exact name: "${fullName}"`);
+              const exactSearchRes = await fetch(`https://api.themoviedb.org/3/search/collection?query=${encodedFull}&include_adult=false&language=en-US&page=1`, {
+                method: 'GET',
+                headers: {
+                  accept: 'application/json',
+                  Authorization: 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiI0OTc4NzEyOGRhOTRiMzU4NWIyMWRhYzVjNGE5MmZjYyIsIm5iZiI6MTc1NjQ0MjAwNi4zMjksInN1YiI6IjY4YjEyZDk2NmZkMmM0MTFiNjM5NmQ3MCIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.MEjHIvjbtHuzHUTpnwyCK6gbNKB0xY4IpSL21OEVJSI'
+                }
+              }).then(res => res.json());
+              console.log(`Exact name search response for "${fullName}":`, exactSearchRes && exactSearchRes.results ? `${exactSearchRes.results.length} results` : exactSearchRes);
+              if (exactSearchRes && !exactSearchRes.error && Array.isArray(exactSearchRes.results) && exactSearchRes.results.length > 0) {
+                // Use the first result that has an image
+                const first = exactSearchRes.results.find((r: any) => r.poster_path || r.backdrop_path) || exactSearchRes.results[0];
+                console.log(`Using first result with image for "${fullName}":`, first);
+                return first;
+              }
+              // If no results, try direct collection/{id} as fallback
               console.log(`Trying direct collection endpoint for ${item.id}`);
               const directRes = await (window as any).tmdb.request(`collection/${item.id}`);
               console.log(`Direct collection response for ${item.id}:`, directRes);
@@ -106,49 +140,7 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSele
                 console.log(`Found collection ${item.id} via direct endpoint:`, directRes);
                 return directRes;
               }
-              // If direct fails, use search/collection with the exact name first
-              const fullName = (item.name || `collection ${item.id}`).trim();
-              // Try exact name search first (better when id from feed doesn't match TMDB id)
-              try {
-                const encodedFull = encodeURIComponent(fullName);
-                console.log(`Searching for collection by exact name: "${fullName}"`);
-                const exactSearchRes = await (window as any).tmdb.request(`search/collection?query=${encodedFull}&include_adult=false&language=en-US&page=1`);
-                console.log(`Exact name search response for "${fullName}":`, exactSearchRes && exactSearchRes.results ? `${exactSearchRes.results.length} results` : exactSearchRes);
-                if (exactSearchRes && !exactSearchRes.error && Array.isArray(exactSearchRes.results) && exactSearchRes.results.length > 0) {
-                  // Prefer the first item from the exact-name search results, but only if it contains an image
-                  const first = exactSearchRes.results[0];
-                  const hasImage = Boolean(first && (first.poster_path || first.backdrop_path));
-                  if (hasImage) {
-                    console.log(`Returning first exact-name search result for "${fullName}" (has image):`, first);
-                    return first;
-                  }
-                  console.log(`First exact-name result for "${fullName}" has no image, falling back to broader search`);
-                }
-              } catch (e) {
-                console.warn('Exact-name search failed', e);
-              }
-
-              // Fallback: try a shorter query (first 2-3 words) to broaden results
-              let query = fullName;
-              if (query.toLowerCase().endsWith(' collection')) {
-                query = query.slice(0, -11).trim(); // remove " collection"
-              }
-              const words = query.split(' ').slice(0, 3);
-              query = words.join(' ');
-              console.log(`Fallback searching for collection ${item.id} (${item.name}) with query: "${query}"`);
-              const encodedQuery = encodeURIComponent(query);
-              const searchRes = await (window as any).tmdb.request(`search/collection?query=${encodedQuery}&include_adult=false&language=en-US&page=1`);
-              console.log(`Fallback search response for "${query}":`, searchRes && searchRes.results ? `${searchRes.results.length} results` : searchRes);
-              if (!searchRes || searchRes.error) throw searchRes || new Error('Invalid search response');
-              // Prefer a name match in the fallback results too
-              const normalize = (s: string) => s ? s.replace(/[\s\-_:–—]+/g, ' ').replace(/[\p{P}\p{S}]/gu, '').trim().toLowerCase() : '';
-              const target = normalize(fullName);
-              const result = searchRes.results?.find((r: any) => normalize(r.name) === target) || searchRes.results?.find((r: any) => r.id === item.id) || searchRes.results?.[0];
-              if (!result) {
-                throw new Error('Collection not found in search results');
-              }
-              console.log(`Found collection for ${item.id} with fallback query "${query}":`, result);
-              return result;
+              throw new Error('No collection found');
             } catch (err) {
               lastErr = err;
               await new Promise(r => setTimeout(r, delay));
@@ -242,11 +234,10 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSele
         <div className="movie-grid" style={{gridTemplateColumns:'repeat(auto-fill, minmax(160px, 1fr))', paddingBottom:20}}>
           {parts.map((p:any)=> {
             const api = (window as any).tmdbApi;
-            const posterSrc = p.poster_path ? (api && api.imageUrl ? api.imageUrl(p.poster_path, 'w300') : `https://image.tmdb.org/t/p/w300${p.poster_path}`) : undefined;
             return (
               <div key={p.id} className="movie-card" role="button" tabIndex={0} onClick={() => onSelectMovie && onSelectMovie(p.id, 'movie')}>
                 <div className="movie-overlay">
-                  <img className="movie-poster" src={posterSrc || undefined} alt={p.title || p.name} loading="lazy" onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/assets/default_collection_poster.png'; }} />
+                  <img className="movie-poster" src={p.poster_path ? `https://image.tmdb.org/t/p/original${p.poster_path}` : ''} alt={p.title || p.name} loading="lazy" />
                   <div className="play-overlay" onClick={(ev)=>{ ev.stopPropagation(); if (onPlayMovie) onPlayMovie(p.id, 'movie', { tmdbId: p.id }); }}>
                     <div className="play-circle"><div className="play-triangle"/></div>
                   </div>
@@ -294,7 +285,7 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSele
                       {c._placeholder ? (
                         <div style={{width:'100%',height:240,background:'#222',display:'flex',alignItems:'center',justifyContent:'center',color:'#888'}}>Loading...</div>
                       ) : (
-                        <img className="movie-poster" src={posterSrc} alt={c.name || `Collection ${c.id}`} loading="lazy" onError={(e) => { (e.currentTarget as HTMLImageElement).src = defaultPoster; }} />
+                        <img className="movie-poster" src={posterSrc} alt={c.name || `Collection ${c.id}`} loading="lazy" />
                       )}
                     </div>
                   <div className="movie-info">
@@ -324,7 +315,7 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSele
                       {c._placeholder ? (
                         <div style={{width:'100%',height:240,background:'#222',display:'flex',alignItems:'center',justifyContent:'center',color:'#888'}}>Loading...</div>
                       ) : (
-                        <img className="movie-poster" src={posterSrc} alt={c.name || `Collection ${c.id}`} loading="lazy" onError={(e) => { (e.currentTarget as HTMLImageElement).src = defaultPoster; }} />
+                        <img className="movie-poster" src={posterSrc} alt={c.name || `Collection ${c.id}`} loading="lazy" />
                       )}
                     </div>
                     <div className="movie-info">

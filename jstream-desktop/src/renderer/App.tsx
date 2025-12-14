@@ -39,6 +39,7 @@ export default function App() {
   const [playerModalOpen, setPlayerModalOpen] = useState(false);
   const [playerModalType, setPlayerModalType] = useState<'movie'|'tv'>('movie');
   const [playerModalParams, setPlayerModalParams] = useState<Record<string, any> | null>(null);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(null);
   // header search removed — SearchPage provides dedicated search UI
   const [genres, setGenres] = useState<any[]>([]);
   const [tvGenres, setTvGenres] = useState<any[]>([]);
@@ -78,6 +79,11 @@ export default function App() {
     setActiveIndex(6); // switch to Details tab (moved after Collections)
   }
 
+  function handleGoToCollections(collectionId?: number) {
+    setSelectedCollectionId(collectionId || null);
+    setActiveIndex(5); // switch to Collections tab
+  }
+
   function handleSelectPerson(personId: number) {
     setSelectedPersonId(personId);
     // Person panel is appended at the end of TabPanels
@@ -112,6 +118,13 @@ export default function App() {
   function handleBackFromPlayer() {
     setActiveIndex(0); // back to Home
   }
+
+  // Reset selectedCollectionId when navigating away from Collections tab
+  useEffect(() => {
+    if (activeIndex !== 5) {
+      setSelectedCollectionId(null);
+    }
+  }, [activeIndex]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -227,8 +240,8 @@ export default function App() {
             <TabPanel><TVPage genres={tvGenres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
             <TabPanel><AnimePage genres={[...genres, ...tvGenres.filter(t=> !genres.find(g=>g.id===t.id))]} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
             <TabPanel><SearchPage movieGenres={genres} tvGenres={tvGenres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
-            <TabPanel><CollectionsPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
-            <TabPanel><DetailsPage tmdbId={detailsTmdbId} itemTypeHint={detailsType} onPlay={handlePlayMovie} onSelect={handleSelectMovie} onSelectPerson={handleSelectPerson} /></TabPanel>
+            <TabPanel><CollectionsPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedCollectionId={selectedCollectionId} /></TabPanel>
+            <TabPanel><DetailsPage tmdbId={detailsTmdbId} itemTypeHint={detailsType} onPlay={handlePlayMovie} onSelect={handleSelectMovie} onSelectPerson={handleSelectPerson} onGoToCollections={handleGoToCollections} /></TabPanel>
             <TabPanel><VideoPlayerPage playerType={playerType} params={playerParams} onBack={handleBackFromPlayer} /></TabPanel>
             <TabPanel><ProfilePage /></TabPanel>
             <TabPanel><PersonPage personId={selectedPersonId} onSelectWork={handleSelectMovie} /></TabPanel>

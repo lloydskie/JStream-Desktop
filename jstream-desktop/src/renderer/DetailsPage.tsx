@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Box, Button, Spinner, HStack, Text } from '@chakra-ui/react';
 import CustomSelect from './components/CustomSelect';
 import { fetchTMDB } from '../utils/tmdbClient';
 
-export default function DetailsPage({ tmdbId, itemTypeHint, onPlay, onSelect, onSelectPerson }: { tmdbId?: number | null, itemTypeHint?: 'movie'|'tv'|null, onPlay?: (tmdbId: number | string, type?: 'movie'|'tv'|'anime', params?: Record<string, any>) => void, onSelect?: (tmdbId: number, type?: 'movie'|'tv') => void, onSelectPerson?: (personId:number)=>void }) {
+export default function DetailsPage({ tmdbId, itemTypeHint, onPlay, onSelect, onSelectPerson, onGoToCollections }: { tmdbId?: number | null, itemTypeHint?: 'movie'|'tv'|null, onPlay?: (tmdbId: number | string, type?: 'movie'|'tv'|'anime', params?: Record<string, any>) => void, onSelect?: (tmdbId: number, type?: 'movie'|'tv') => void, onSelectPerson?: (personId:number)=>void, onGoToCollections?: (collectionId?: number) => void }) {
   const [item, setItem] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [itemType, setItemType] = useState<'movie'|'tv'>('movie');
@@ -13,6 +13,10 @@ export default function DetailsPage({ tmdbId, itemTypeHint, onPlay, onSelect, on
   const [recommendations, setRecommendations] = useState<any[]>([]);
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [trailerError, setTrailerError] = useState<string | null>(null);
+  const [trailerPlaying, setTrailerPlaying] = useState(false);
+  const [mediaLogo, setMediaLogo] = useState<string | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const [showHeroContent, setShowHeroContent] = useState(true);
 
   // Favorite state for this detail item
   const [isFavorite, setIsFavorite] = useState<boolean>(false);
@@ -57,6 +61,13 @@ export default function DetailsPage({ tmdbId, itemTypeHint, onPlay, onSelect, on
             setItemType('movie');
           }
         }
+        // fetch media logos (movie/tv images) to prefer the specific title logo
+        try {
+          const typePath = itemTypeHint === 'tv' ? 'tv' : (itemTypeHint === 'movie' ? 'movie' : undefined);
+          // if we determined itemType above, use it, otherwise try both later via separate effect
+        } catch (e) {
+          // ignore
+        }
       } catch (err) {
         console.error('Failed to fetch details:', err);
         setItem(null);
@@ -65,6 +76,35 @@ export default function DetailsPage({ tmdbId, itemTypeHint, onPlay, onSelect, on
       }
     })();
   }, [tmdbId]);
+
+  // Fetch title-specific logo from TMDb images endpoint (prefer logos array)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        if (!tmdbId || !item) return;
+        const typePath = itemType === 'tv' ? 'tv' : 'movie';
+        const data = await fetchTMDB(`${typePath}/${tmdbId}/images`, { include_image_language: 'en,null' });
+        if (!mounted) return;
+        const logos = (data && (data.logos || data.logos)) || [];
+        if (Array.isArray(logos) && logos.length > 0) {
+          // prefer largest width
+          logos.sort((a:any,b:any)=> (b.width || 0) - (a.width || 0));
+          const logo = logos.find((l:any)=> !!l.file_path) || logos[0];
+          if (logo && logo.file_path) {
+            setMediaLogo(`https://image.tmdb.org/t/p/original${logo.file_path}`);
+            return;
+          }
+        }
+        // fallback: try production company or network logos already present on item
+        const fallbackLogo = (item.production_companies && item.production_companies.find((p:any)=>p.logo_path)) || (item.networks && item.networks[0] && item.networks[0].logo_path) || null;
+        if (fallbackLogo) setMediaLogo(`https://image.tmdb.org/t/p/w300${fallbackLogo.logo_path || fallbackLogo}`);
+      } catch (e) {
+        // ignore
+      }
+    })();
+    return () => { mounted = false; };
+  }, [item, tmdbId, itemType]);
 
   // When a season is selected, load its episodes
   useEffect(() => {
@@ -199,12 +239,48 @@ export default function DetailsPage({ tmdbId, itemTypeHint, onPlay, onSelect, on
         }
       } catch (e) {
         console.error('DetailsPage: failed to load trailer', e);
-        setTrailerError('Failed to load trailer — check TMDb API key/network');
+        // Removed error message display
       }
     })();
 
     return () => { mounted = false };
   }, [item, tmdbId, itemType]);
+
+  // When trailerKey is set, wait 3s then bring hero to view and show trailer
+  useEffect(() => {
+    let t: any = null;
+    if (!trailerKey) {
+      setTrailerPlaying(false);
+      setIsMuted(false);
+      return;
+    }
+    t = setTimeout(() => {
+      try {
+        if (heroRef.current) {
+          heroRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          (heroRef.current as HTMLElement).focus && (heroRef.current as HTMLElement).focus();
+        }
+      } catch (e) { /* ignore */ }
+      setTrailerPlaying(true);
+      setIsMuted(false); // Start unmuted
+    }, 8000);
+    return () => { if (t) clearTimeout(t); };
+  }, [trailerKey]);
+
+  // Stop trailer when component unmounts or tmdbId changes
+  useEffect(() => {
+    return () => {
+      // Stop the YouTube video when leaving the page
+      if (trailerIframeRef.current) {
+        try {
+          const iframe = trailerIframeRef.current;
+          iframe.contentWindow?.postMessage('{"event":"command","func":"stopVideo","args":""}', '*');
+        } catch (e) {
+          // Ignore errors if iframe is not accessible
+        }
+      }
+    };
+  }, [trailerKey]);
 
   // When seasons are available, default to the first season so episodes feed shows
   useEffect(() => {
@@ -227,7 +303,13 @@ export default function DetailsPage({ tmdbId, itemTypeHint, onPlay, onSelect, on
     } catch (e) { console.error('Favorite toggle failed', e); }
   }
 
+  const toggleMute = () => {
+    setIsMuted(!isMuted);
+  };
+
   // Refs for horizontal feed containers so we can attach native wheel listeners (passive:false)
+  const heroRef = React.useRef<HTMLDivElement | null>(null);
+  const trailerIframeRef = React.useRef<HTMLIFrameElement | null>(null);
   const castRef = React.useRef<HTMLElement | null>(null);
   const seasonsRef = React.useRef<HTMLElement | null>(null);
   const episodesRef = React.useRef<HTMLElement | null>(null);
@@ -272,79 +354,97 @@ export default function DetailsPage({ tmdbId, itemTypeHint, onPlay, onSelect, on
   if (loading) return <Box p={4}><Spinner /></Box>;
   if (!item) return <Box p={4}><Text>Item not found.</Text></Box>;
 
+  // Compute hero backdrop and optional logo for media title
+  const backdropUrl = item.backdrop_path ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` : (item.poster_path ? `https://image.tmdb.org/t/p/original${item.poster_path}` : undefined);
+  // Prefer the media-specific logo fetched from TMDb images endpoint, fallback to network/production company logo
+  const fallbackLogoPath = (item.production_companies && item.production_companies.find((p:any)=>p.logo_path)) ? item.production_companies.find((p:any)=>p.logo_path).logo_path : ((item.networks && item.networks[0] && item.networks[0].logo_path) ? item.networks[0].logo_path : null);
+  const logoSrc = mediaLogo || (fallbackLogoPath ? `https://image.tmdb.org/t/p/w300${fallbackLogoPath}` : null);
+
   return (
     <>
-      <div className="detail-hero">
-        <div className="detail-trailer" aria-hidden={!!trailerKey ? 'false' : 'true'}>
-          {trailerKey && (
-            <iframe
-              src={`https://www.youtube.com/embed/${trailerKey}?rel=0&autoplay=1&mute=1&controls=0&playsinline=1&modestbranding=1&loop=1&playlist=${trailerKey}`}
-              title="Trailer"
-              frameBorder="0"
-              allow="autoplay; encrypted-media"
-              allowFullScreen
-              loading="lazy"
-            />
+      <div className="detail-hero" ref={heroRef} tabIndex={-1} onClick={() => setShowHeroContent(!showHeroContent)} style={backdropUrl ? { backgroundImage: `url(${backdropUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
+        <div className="detail-trailer" aria-hidden={!trailerKey ? 'true' : 'false'}>
+          {trailerKey && trailerPlaying && (
+            <>
+              <iframe
+                key={`${trailerKey}-${isMuted}`}
+                ref={trailerIframeRef}
+                src={`https://www.youtube.com/embed/${trailerKey}?rel=0&autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&playsinline=1&modestbranding=1&loop=1&playlist=${trailerKey}&enablejsapi=1`}
+                title="Trailer"
+                frameBorder="0"
+                allow="autoplay; encrypted-media"
+                allowFullScreen
+                loading="lazy"
+              />
+            </>
           )}
         </div>
-      <img className="detail-poster" src={item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : undefined} alt={item.title || item.name} />
-      <div className="detail-info">
-          {trailerError && <div className="hero-trailer-fallback" role="status" style={{marginBottom:8}}>{trailerError}</div>}
-        <div className="detail-title">{item.title || item.name}</div>
-        <div className="detail-meta">{item.release_date || item.first_air_date} • {item.runtime ? item.runtime + 'm' : ''} • Rating {item.vote_average}/10</div>
-        <div className="detail-overview">{item.overview}</div>
 
-        {/* Season/episode selectors removed from hero per request — feeds shown below */}
+        {showHeroContent && (
+        <div className="hero-overlay">
+          <div className="hero-content">
+            {trailerError && <div className="hero-trailer-fallback" role="status" style={{marginBottom:8}}>{trailerError}</div>}
+            <div style={{display:'flex',alignItems:'center',gap:12}}>
+              {logoSrc ? (
+                <img src={logoSrc} alt={item.title || item.name} className="detail-logo" style={{maxHeight:64,objectFit:'contain'}} />
+              ) : (
+                <div className="detail-title">{item.title || item.name}</div>
+              )}
+            </div>
+            <div className="detail-meta" style={{marginTop:8}}>{item.release_date || item.first_air_date} • {item.runtime ? item.runtime + 'm' : ''} • Rating {item.vote_average}/10</div>
+            <div className="hero-overview" style={{marginTop:12}}>{item.overview}</div>
 
-        <div style={{marginTop:16, display:'flex', gap:8, alignItems:'center'}}>
-          {onPlay && itemType === 'movie' && (
-            <Button
-              onClick={() => onPlay(tmdbId, 'movie', { tmdbId })}
-              bg="#D81F26"
-              color="#fff"
-              _hover={{ bg: '#B71C1F' }}
-            >
-              Play
-            </Button>
-          )}
-          {onPlay && itemType === 'tv' && (
-            <Button
-              onClick={() => onPlay(tmdbId, 'tv', { tmdbId, season: 1, episode: 1 })}
-              bg="#D81F26"
-              color="#fff"
-              _hover={{ bg: '#B71C1F' }}
-            >
-              Play
-            </Button>
-          )}
-          <Button
-            aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-            onClick={toggleFavorite}
-            variant="ghost"
-            _hover={{ bg: 'transparent' }}
-            style={{ padding: 6 }}
-          >
-            <span style={{fontSize:18, lineHeight:1, color: isFavorite ? '#D81F26' : 'var(--muted)'}}>{isFavorite ? '♥' : '♡'}</span>
-          </Button>
-        </div>
-
-        {/* Cast preview inside hero (circular profiles) */}
-        {cast && cast.length > 0 && (
-          <div style={{marginTop:18}} className="cast-section">
-            <div style={{fontSize:14,fontWeight:700,marginBottom:8}}>Cast</div>
-            <div className="cast-row" tabIndex={0} ref={castRef} onMouseEnter={(e)=> (e.currentTarget as HTMLElement).focus()}>
-              {cast.slice(0,12).map((c:any) => (
-                <button key={c.cast_id || c.credit_id || c.id} onClick={() => onSelectPerson && onSelectPerson(c.id)} className="cast-item">
-                  <img src={c.profile_path ? `https://image.tmdb.org/t/p/w185${c.profile_path}` : undefined} alt={c.name} />
-                  <div className="cast-name">{c.name}</div>
-                  <div className="cast-role">{c.character}</div>
+            <div style={{marginTop:16, display:'flex', gap:8, alignItems:'center'}}>
+              {onPlay && itemType === 'movie' && (
+                <Button onClick={(e) => { e.stopPropagation(); onPlay(tmdbId, 'movie', { tmdbId }); }} className="button primary">Play</Button>
+              )}
+              {onPlay && itemType === 'tv' && (
+                <Button onClick={(e) => { e.stopPropagation(); onPlay(tmdbId, 'tv', { tmdbId, season: 1, episode: 1 }); }} className="button primary">Play</Button>
+              )}
+              <Button aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'} onClick={(e) => { e.stopPropagation(); toggleFavorite(); }} variant="ghost" style={{ padding: 6 }}>
+                <span style={{fontSize:18, lineHeight:1, color: isFavorite ? '#D81F26' : 'var(--muted)'}}>{isFavorite ? '♥' : '♡'}</span>
+              </Button>
+              {item && item.belongs_to_collection && onGoToCollections && (
+                <Button 
+                  onClick={(e) => { e.stopPropagation(); onGoToCollections(item.belongs_to_collection.id); }} 
+                  variant="ghost" 
+                  style={{ padding: 6 }}
+                  aria-label="View collection"
+                >
+                  <span style={{fontSize:18, lineHeight:1}}>📚</span>
+                </Button>
+              )}
+              {trailerKey && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleMute(); }}
+                  className="mute-btn"
+                  aria-label={isMuted ? 'Unmute trailer' : 'Mute trailer'}
+                >
+                  {isMuted ? '🔊' : '🔇'}
                 </button>
-              ))}
+              )}
             </div>
           </div>
+        </div>
         )}
       </div>
-    </div>
+
+      <div className="detail-sections">
+        {/* Cast preview moved below hero */}
+        {cast && cast.length > 0 && (
+          <div className="cast-section">
+          <div style={{fontSize:14,fontWeight:700,marginBottom:8}}>Cast</div>
+          <div className="cast-row" tabIndex={0} ref={castRef} onMouseEnter={(e)=> (e.currentTarget as HTMLElement).focus()}>
+            {cast.slice(0,12).map((c:any) => (
+              <button key={c.cast_id || c.credit_id || c.id} onClick={() => onSelectPerson && onSelectPerson(c.id)} className="cast-item">
+                <img src={c.profile_path ? `https://image.tmdb.org/t/p/w185${c.profile_path}` : undefined} alt={c.name} />
+                <div className="cast-name">{c.name}</div>
+                <div className="cast-role">{c.character}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     <div className="detail-sections" style={{marginTop:24}}>
         {/* Seasons and Episodes feeds for TV shows */}
         {itemType === 'tv' && seasons && seasons.length > 0 && (
@@ -417,6 +517,8 @@ export default function DetailsPage({ tmdbId, itemTypeHint, onPlay, onSelect, on
             </div>
           </div>
         )}
+      </div>
+
       </div>
     </>
   );
