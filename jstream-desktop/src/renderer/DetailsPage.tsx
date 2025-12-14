@@ -11,6 +11,8 @@ export default function DetailsPage({ tmdbId, itemTypeHint, onPlay, onSelect, on
   const [cast, setCast] = useState<any[]>([]);
   const [similar, setSimilar] = useState<any[]>([]);
   const [recommendations, setRecommendations] = useState<any[]>([]);
+  const [trailerKey, setTrailerKey] = useState<string | null>(null);
+  const [trailerError, setTrailerError] = useState<string | null>(null);
 
   // Favorite state for this detail item
   const [isFavorite, setIsFavorite] = useState<boolean>(false);
@@ -112,6 +114,98 @@ export default function DetailsPage({ tmdbId, itemTypeHint, onPlay, onSelect, on
     })();
   }, [item, tmdbId, itemType]);
 
+  // Load trailer when item loads or tmdbId changes
+  useEffect(() => {
+    let mounted = true;
+    setTrailerKey(null);
+    setTrailerError(null);
+    if (!tmdbId || !item) return;
+
+    // Dev override: set `window.__DEV_TRAILER_KEY = 'YOUTUBE_KEY'` in DevTools to force a trailer
+    const devKey = (window as any).__DEV_TRAILER_KEY;
+    if (devKey) {
+      console.debug('DetailsPage: using dev override trailer key');
+      setTrailerKey(String(devKey));
+      return () => { mounted = false };
+    }
+
+    // Dev override: set `window.__DEV_TMDB_RESPONSE = {...}` to simulate TMDb /videos response
+    const devResp = (window as any).__DEV_TMDB_RESPONSE;
+    if (devResp) {
+      console.debug('DetailsPage: using dev TMDb response override', devResp);
+      const data = devResp;
+      const results: any[] = data?.results || [];
+      const typePriority = ['Trailer','Teaser','Featurette','Clip','Behind the Scenes','Bloopers'];
+      let chosen: any = null;
+      for (const t of typePriority) {
+        const candidates = results.filter((v:any) => v.type === t);
+        if (candidates.length === 0) continue;
+        chosen = candidates.find((v:any) => v.official === true) || candidates[0];
+        break;
+      }
+      if (!chosen && results.length > 0) chosen = results[0];
+      if (!chosen) {
+        console.debug('DetailsPage(dev): no videos in provided response', { results });
+        setTrailerError('No videos available (dev override)');
+        return () => { mounted = false };
+      }
+      const site = (chosen.site || '').toLowerCase();
+      const key = chosen.key;
+      if (!key) { setTrailerError('Selected video missing key (dev override)'); return () => { mounted = false }; }
+      if (site === 'youtube') setTrailerKey(key);
+      else if (site === 'vimeo') setTrailerKey(`vimeo:${key}`);
+      else setTrailerError(`Video available on ${chosen.site} (not embeddable)`);
+      return () => { mounted = false };
+    }
+
+    (async () => {
+      try {
+        const typePath = itemType === 'tv' ? 'tv' : 'movie';
+        const data = await fetchTMDB(`${typePath}/${tmdbId}/videos`, { language: 'en-US' });
+        if (!mounted) return;
+        const results: any[] = data?.results || [];
+
+        // Prefer prioritized types, falling back to any video
+        const typePriority = ['Trailer','Teaser','Featurette','Clip','Behind the Scenes','Bloopers'];
+        let chosen: any = null;
+        for (const t of typePriority) {
+          const candidates = results.filter(v => v.type === t);
+          if (candidates.length === 0) continue;
+          chosen = candidates.find(v => v.official === true) || candidates[0];
+          break;
+        }
+        if (!chosen && results.length > 0) chosen = results[0];
+
+        if (!chosen) {
+          console.debug('DetailsPage: no videos at all in TMDb response', { results });
+          setTrailerError('No videos available');
+          return;
+        }
+
+        const site = (chosen.site || '').toLowerCase();
+        const key = chosen.key;
+        if (!key) {
+          console.debug('DetailsPage: chosen video has no key', { chosen });
+          setTrailerError('Selected video missing key');
+          return;
+        }
+        if (site === 'youtube') {
+          setTrailerKey(key);
+        } else if (site === 'vimeo') {
+          setTrailerKey(`vimeo:${key}`);
+        } else {
+          console.debug('DetailsPage: found video on unsupported site', { site, chosen });
+          setTrailerError(`Video available on ${chosen.site} (not embeddable)`);
+        }
+      } catch (e) {
+        console.error('DetailsPage: failed to load trailer', e);
+        setTrailerError('Failed to load trailer — check TMDb API key/network');
+      }
+    })();
+
+    return () => { mounted = false };
+  }, [item, tmdbId, itemType]);
+
   // When seasons are available, default to the first season so episodes feed shows
   useEffect(() => {
     if (itemType === 'tv' && seasons && seasons.length > 0 && !selectedSeason) {
@@ -181,8 +275,21 @@ export default function DetailsPage({ tmdbId, itemTypeHint, onPlay, onSelect, on
   return (
     <>
       <div className="detail-hero">
+        <div className="detail-trailer" aria-hidden={!!trailerKey ? 'false' : 'true'}>
+          {trailerKey && (
+            <iframe
+              src={`https://www.youtube.com/embed/${trailerKey}?rel=0&autoplay=1&mute=1&controls=0&playsinline=1&modestbranding=1&loop=1&playlist=${trailerKey}`}
+              title="Trailer"
+              frameBorder="0"
+              allow="autoplay; encrypted-media"
+              allowFullScreen
+              loading="lazy"
+            />
+          )}
+        </div>
       <img className="detail-poster" src={item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : undefined} alt={item.title || item.name} />
       <div className="detail-info">
+          {trailerError && <div className="hero-trailer-fallback" role="status" style={{marginBottom:8}}>{trailerError}</div>}
         <div className="detail-title">{item.title || item.name}</div>
         <div className="detail-meta">{item.release_date || item.first_air_date} • {item.runtime ? item.runtime + 'm' : ''} • Rating {item.vote_average}/10</div>
         <div className="detail-overview">{item.overview}</div>

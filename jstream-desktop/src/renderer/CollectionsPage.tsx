@@ -3,12 +3,16 @@ import { Box, Button, Spinner, Input } from '@chakra-ui/react';
 import InfiniteScroll from 'react-infinite-scroll-component';
 import { fetchTMDB } from '../utils/tmdbClient';
 
+type MaybeString = string | null;
+type FeedItem = { id: number; name: string; poster_path: MaybeString; backdrop_path: MaybeString; poster_full: MaybeString; _placeholder?: boolean };
+type CollectionDetail = { id: number; name: string; poster_path: MaybeString; backdrop_path: MaybeString; poster_full: MaybeString };
+
 // Single clean implementation — no duplicated/trailing content
 export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSelectMovie?: (id:number, type?:'movie'|'tv')=>void, onPlayMovie?: (id:number|string, type?:'movie'|'tv', params?:Record<string,any>)=>void }){
   const [query, setQuery] = useState('');
-  const [filteredFeed, setFilteredFeed] = useState<any[]>([]);
+  const [filteredFeed, setFilteredFeed] = useState<FeedItem[]>([]);
 
-  const [feedCollections, setFeedCollections] = useState<any[]>([]);
+  const [feedCollections, setFeedCollections] = useState<FeedItem[]>([]);
   const [feedStats, setFeedStats] = useState({ total: 0, filled: 0, placeholders: 0, failed: 0 });
   const defaultPoster = '/assets/default_collection_poster.png';
   const [loadingFeed, setLoadingFeed] = useState(false);
@@ -19,8 +23,9 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSele
   const [feedLoadingMore, setFeedLoadingMore] = useState(false);
 
   const [selectedCollection, setSelectedCollection] = useState<number | null>(null);
-  const [collectionDetails, setCollectionDetails] = useState<any | null>(null);
-  const detailCache = React.useRef<Map<number, any>>(new Map());
+  const [collectionDetails, setCollectionDetails] = useState<CollectionDetail | null>(null);
+
+  const detailCache = React.useRef<Map<number, CollectionDetail>>(new Map());
 
   // Fetch feed from main process (downloads & decompresses TMDB export server-side)
   // Reset feed and cache on mount or refresh
@@ -81,7 +86,7 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSele
         // Insert placeholders in order to ensure the displayed feed keeps stable ordering
         setFeedCollections(prev => {
           const existingIds = new Set(prev.map(p => Number(p.id)));
-          const placeholders = itemsArr.map(item => ({ id: item.id, name: item.name || '', poster_path: null, backdrop_path: null, poster_full: null, _placeholder: true }));
+          const placeholders: FeedItem[] = itemsArr.map(item => ({ id: item.id, name: item.name || '', poster_path: null, backdrop_path: null, poster_full: null, _placeholder: true }));
           console.log('Inserting placeholders for items', placeholders.map(p => ({ id: p.id, name: p.name })));
           return prev.concat(placeholders.filter(p => !existingIds.has(p.id)));
         });
@@ -101,38 +106,48 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSele
                 console.log(`Found collection ${item.id} via direct endpoint:`, directRes);
                 return directRes;
               }
-              // If direct fails, use search/collection with the name
-              let query = item.name || `collection ${item.id}`;
+              // If direct fails, use search/collection with the exact name first
+              const fullName = (item.name || `collection ${item.id}`).trim();
+              // Try exact name search first (better when id from feed doesn't match TMDB id)
+              try {
+                const encodedFull = encodeURIComponent(fullName);
+                console.log(`Searching for collection by exact name: "${fullName}"`);
+                const exactSearchRes = await (window as any).tmdb.request(`search/collection?query=${encodedFull}&include_adult=false&language=en-US&page=1`);
+                console.log(`Exact name search response for "${fullName}":`, exactSearchRes && exactSearchRes.results ? `${exactSearchRes.results.length} results` : exactSearchRes);
+                if (exactSearchRes && !exactSearchRes.error && Array.isArray(exactSearchRes.results) && exactSearchRes.results.length > 0) {
+                  // Prefer the first item from the exact-name search results, but only if it contains an image
+                  const first = exactSearchRes.results[0];
+                  const hasImage = Boolean(first && (first.poster_path || first.backdrop_path));
+                  if (hasImage) {
+                    console.log(`Returning first exact-name search result for "${fullName}" (has image):`, first);
+                    return first;
+                  }
+                  console.log(`First exact-name result for "${fullName}" has no image, falling back to broader search`);
+                }
+              } catch (e) {
+                console.warn('Exact-name search failed', e);
+              }
+
+              // Fallback: try a shorter query (first 2-3 words) to broaden results
+              let query = fullName;
               if (query.toLowerCase().endsWith(' collection')) {
                 query = query.slice(0, -11).trim(); // remove " collection"
               }
-              // Use first 2-3 words for better search results
               const words = query.split(' ').slice(0, 3);
               query = words.join(' ');
-              console.log(`Searching for collection ${item.id} (${item.name}) with query: "${query}"`);
+              console.log(`Fallback searching for collection ${item.id} (${item.name}) with query: "${query}"`);
               const encodedQuery = encodeURIComponent(query);
               const searchRes = await (window as any).tmdb.request(`search/collection?query=${encodedQuery}&include_adult=false&language=en-US&page=1`);
-              console.log(`Search response for "${query}":`, searchRes);
+              console.log(`Fallback search response for "${query}":`, searchRes && searchRes.results ? `${searchRes.results.length} results` : searchRes);
               if (!searchRes || searchRes.error) throw searchRes || new Error('Invalid search response');
-              // Find the result with matching id
-              const result = searchRes.results?.find((r: any) => r.id === item.id);
+              // Prefer a name match in the fallback results too
+              const normalize = (s: string) => s ? s.replace(/[\s\-_:–—]+/g, ' ').replace(/[\p{P}\p{S}]/gu, '').trim().toLowerCase() : '';
+              const target = normalize(fullName);
+              const result = searchRes.results?.find((r: any) => normalize(r.name) === target) || searchRes.results?.find((r: any) => r.id === item.id) || searchRes.results?.[0];
               if (!result) {
-                console.log(`Collection ${item.id} (${item.name}) not found in search results for query "${query}", trying full name`);
-                // If not found, try with the full name
-                const fullQuery = encodeURIComponent(item.name || `collection ${item.id}`);
-                console.log(`Searching with full name query: "${fullQuery}"`);
-                const fullSearchRes = await (window as any).tmdb.request(`search/collection?query=${fullQuery}&include_adult=false&language=en-US&page=1`);
-                console.log(`Full name search response for "${fullQuery}":`, fullSearchRes);
-                if (fullSearchRes && !fullSearchRes.error) {
-                  const fullResult = fullSearchRes.results?.find((r: any) => r.id === item.id);
-                  if (fullResult) {
-                    console.log(`Found collection ${item.id} with full name query:`, fullResult);
-                    return fullResult;
-                  }
-                }
                 throw new Error('Collection not found in search results');
               }
-              console.log(`Found collection ${item.id} with query "${query}":`, result);
+              console.log(`Found collection for ${item.id} with fallback query "${query}":`, result);
               return result;
             } catch (err) {
               lastErr = err;
@@ -150,11 +165,11 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSele
               const detail = await fetchWithRetries(item, 3);
               console.log('Fetching collection detail for id', item.id, 'name', item.name, '->', detail && detail.error ? 'ERROR' : 'OK');
               // Use the search result
-              const value = {
+              const value: CollectionDetail = {
                 id: detail.id || item.id,
                 name: detail.name || item.name || `Collection ${item.id}`,
-                poster_path: detail.poster_path,
-                backdrop_path: detail.backdrop_path,
+                poster_path: detail.poster_path || null,
+                backdrop_path: detail.backdrop_path || null,
                 poster_full: detail.poster_path ? `https://image.tmdb.org/t/p/original${detail.poster_path}` : (detail.backdrop_path ? `https://image.tmdb.org/t/p/original${detail.backdrop_path}` : null)
               };
               detailCache.current.set(Number(item.id), value);
@@ -165,7 +180,7 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie }: { onSele
               console.warn('Failed to fetch collection detail for id', item.id, e);
               // increment failed count
               setFeedStats(s => ({ ...s, failed: (s.failed || 0) + 1 }));
-              detailCache.current.set(Number(item.id), { id: item.id, name: item.name || `Collection ${item.id}`, poster_path: null, backdrop_path: null, poster_full: null });
+              detailCache.current.set(Number(item.id), { id: item.id, name: item.name || `Collection ${item.id}`, poster_path: null, backdrop_path: null, poster_full: null } as CollectionDetail);
             }
           }
         });
