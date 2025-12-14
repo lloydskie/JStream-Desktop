@@ -128,21 +128,26 @@ export default function HomeGrid({ onSelectMovie, onPlayMovie, selectedTmdbId, s
   }, [selectedGenre]);
 
   return (
-    <div className="app-shell">
-      {loading && <Spinner />}
-      {featured && <HeroBanner movie={featured} onPlay={onPlayMovie || onSelectMovie} onMore={onSelectMovie} />}
+    <>
+      {featured && <HeroBanner movie={featured} onPlay={onPlayMovie || onSelectMovie} onMore={onSelectMovie} fullBleed />}
+      {/* spacer keeps the following centered app-shell content below the full-bleed hero */}
+      {featured && <div className="hero-spacer" aria-hidden="true" />}
 
-      <Row title="Top 10" movies={top10} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />
-      <Row title="Popular on JStream" movies={popular} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />
-      {becauseYouWatched.length > 0 && <Row title="Because you watched" movies={becauseYouWatched} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />}
-      <Row title="Top Rated" movies={topRated} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />
+      <div className="app-shell">
+        {loading && <Spinner />}
 
-      <div className="bottom-nav">
-        <button>Home</button>
-        <button>Coming Soon</button>
-        <button>Downloads</button>
-        <button>Search</button>
+        <Row title="Top 10" movies={top10} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />
+        <Row title="Popular on JStream" movies={popular} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />
+        {becauseYouWatched.length > 0 && <Row title="Because you watched" movies={becauseYouWatched} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />}
+        <Row title="Top Rated" movies={topRated} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />
+
+        <div className="bottom-nav">
+          <button>Home</button>
+          <button>Coming Soon</button>
+          <button>Downloads</button>
+          <button>Search</button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

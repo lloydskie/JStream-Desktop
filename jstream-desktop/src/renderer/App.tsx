@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { ChakraProvider, defaultSystem } from '@chakra-ui/react';
 import { Tabs, TabList, TabPanels, Tab, TabPanel } from '@chakra-ui/tabs';
 import HomeGrid from './HomeGrid';
@@ -76,18 +77,18 @@ export default function App() {
   function handleSelectMovie(tmdbId: number, type?: 'movie'|'tv') {
     setDetailsTmdbId(tmdbId);
     setDetailsType(type || null);
-    setActiveIndex(6); // switch to Details tab (moved after Collections)
+    setActiveIndex(9); // switch to Details tab
   }
 
   function handleGoToCollections(collectionId?: number) {
     setSelectedCollectionId(collectionId || null);
-    setActiveIndex(5); // switch to Collections tab
+    setActiveIndex(8); // switch to Collections tab
   }
 
   function handleSelectPerson(personId: number) {
     setSelectedPersonId(personId);
     // Person panel is appended at the end of TabPanels
-    setActiveIndex(9);
+    setActiveIndex(11);
   }
 
   // header search removed
@@ -121,7 +122,7 @@ export default function App() {
 
   // Reset selectedCollectionId when navigating away from Collections tab
   useEffect(() => {
-    if (activeIndex !== 5) {
+    if (activeIndex !== 8) {
       setSelectedCollectionId(null);
     }
   }, [activeIndex]);
@@ -180,25 +181,30 @@ export default function App() {
     <>
     <ChakraProvider value={defaultSystem}>
       <ErrorBoundary>
-        <div className="app-shell" aria-hidden={playerModalOpen} style={playerModalOpen ? { pointerEvents: 'none' } : undefined}>
-          <Tabs index={activeIndex} onChange={index => setActiveIndex(index)} isFitted variant="enclosed">
-          <header className="app-header">
-            <div className="brand"><div className="logo">JStream</div></div>
-            <div className="top-nav">
-              <TabList mb="1em">
-                <Tab>Home</Tab>
-                <Tab>Movies</Tab>
-                <Tab>TV Shows</Tab>
-                <Tab>Anime</Tab>
-                <Tab>Search</Tab>
-                <Tab>Collections</Tab>
-              </TabList>
-            </div>
-            <div className="header-controls">
-              <button className="profile-btn button ghost" title="Profile" onClick={()=> setActiveIndex(8)}>👤</button>
-              <button aria-label="Open menu" className="hamburger button ghost" onClick={()=> setIsMobileMenuOpen(true)} style={{marginLeft:8}}>☰</button>
-            </div>
-          </header>
+        <Tabs index={activeIndex} onChange={index => setActiveIndex(index)} isFitted variant="enclosed">
+          {/* Header is portaled to #header-root so it can overlay the full-bleed hero without being constrained */}
+          {(() => {
+            const headerNode = typeof document !== 'undefined' ? document.getElementById('header-root') : null;
+            const headerJsx = (
+              <header className="app-header">
+                <div className="brand"><div className="logo">JStream</div></div>
+                <TabList mb="1em">
+                  <Tab>Home</Tab>
+                  <Tab>Shows</Tab>
+                  <Tab>Movies</Tab>
+                  <Tab>New & Popular</Tab>
+                  <Tab>My List</Tab>
+                  <Tab>Browse by Languages</Tab>
+                </TabList>
+                <div className="header-controls">
+                  <button className="search-btn button ghost" title="Search" onClick={()=> setActiveIndex(6)}>🔍</button>
+                  <button className="profile-btn button ghost" title="Profile" onClick={()=> setActiveIndex(7)}>👤</button>
+                  <button aria-label="Open menu" className="hamburger button ghost" onClick={()=> setIsMobileMenuOpen(true)} style={{marginLeft:8}}>☰</button>
+                </div>
+              </header>
+            );
+            return headerNode ? createPortal(headerJsx, headerNode) : headerJsx;
+          })()}
 
           {isMobileMenuOpen ? (
             <div className="mobile-menu-overlay surface-card" role="dialog" aria-modal={true}>
@@ -217,38 +223,40 @@ export default function App() {
                 <div>
                   <label style={{color:'#fff',fontSize:12}}>Search</label>
                   <div style={{position:'relative', marginTop:6}}>
-                    <input id="mobile-search" className="search-input input" placeholder="Search..." onFocus={() => { setActiveIndex(4); setIsMobileMenuOpen(false); }} />
+                    <input id="mobile-search" className="search-input input" placeholder="Search..." onFocus={() => { setActiveIndex(6); setIsMobileMenuOpen(false); }} />
                   </div>
                 </div>
                 <div style={{display:'flex',flexDirection:'column',gap:8}}>
                   <button className="menu-link" onClick={() => { setActiveIndex(0); setIsMobileMenuOpen(false); }}>Home</button>
-                  <button className="menu-link" onClick={() => { setActiveIndex(1); setIsMobileMenuOpen(false); }}>Movies</button>
-                  <button className="menu-link" onClick={() => { setActiveIndex(2); setIsMobileMenuOpen(false); }}>TV Shows</button>
-                  <button className="menu-link" onClick={() => { setActiveIndex(3); setIsMobileMenuOpen(false); }}>Anime</button>
-                  <button className="menu-link" onClick={() => { setActiveIndex(4); setIsMobileMenuOpen(false); }}>Search</button>
-                  <button className="menu-link" onClick={() => { setActiveIndex(5); setIsMobileMenuOpen(false); }}>Collections</button>
-                  <button className="menu-link" onClick={() => { setActiveIndex(6); setIsMobileMenuOpen(false); }}>Details</button>
-                  <button className="menu-link" onClick={() => { setActiveIndex(7); setIsMobileMenuOpen(false); }}>Player</button>
-                  <button className="menu-link" onClick={() => { setActiveIndex(8); setIsMobileMenuOpen(false); }}>Profile</button>
+                  <button className="menu-link" onClick={() => { setActiveIndex(1); setIsMobileMenuOpen(false); }}>Shows</button>
+                  <button className="menu-link" onClick={() => { setActiveIndex(2); setIsMobileMenuOpen(false); }}>Movies</button>
+                  <button className="menu-link" onClick={() => { setActiveIndex(3); setIsMobileMenuOpen(false); }}>New & Popular</button>
+                  <button className="menu-link" onClick={() => { setActiveIndex(4); setIsMobileMenuOpen(false); }}>My List</button>
+                  <button className="menu-link" onClick={() => { setActiveIndex(5); setIsMobileMenuOpen(false); }}>Browse by Languages</button>
+                  <button className="menu-link" onClick={() => { setActiveIndex(6); setIsMobileMenuOpen(false); }}>Search</button>
+                  <button className="menu-link" onClick={() => { setActiveIndex(7); setIsMobileMenuOpen(false); }}>Profile</button>
                 </div>
               </div>
             </div>
           ) : null}
-          <TabPanels>
-            <TabPanel><HomeGrid onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedTmdbId={selectedTmdbId} selectedGenre={selectedGenre} /></TabPanel>
-            <TabPanel><MoviesPage genres={genres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
-            <TabPanel><TVPage genres={tvGenres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
-            <TabPanel><AnimePage genres={[...genres, ...tvGenres.filter(t=> !genres.find(g=>g.id===t.id))]} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
-            <TabPanel><SearchPage movieGenres={genres} tvGenres={tvGenres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
-            <TabPanel><CollectionsPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedCollectionId={selectedCollectionId} /></TabPanel>
-            <TabPanel><DetailsPage tmdbId={detailsTmdbId} itemTypeHint={detailsType} onPlay={handlePlayMovie} onSelect={handleSelectMovie} onSelectPerson={handleSelectPerson} onGoToCollections={handleGoToCollections} /></TabPanel>
-            <TabPanel><VideoPlayerPage playerType={playerType} params={playerParams} onBack={handleBackFromPlayer} /></TabPanel>
-            <TabPanel><ProfilePage /></TabPanel>
-            <TabPanel><PersonPage personId={selectedPersonId} onSelectWork={handleSelectMovie} /></TabPanel>
-          </TabPanels>
+            <div className="app-shell" aria-hidden={playerModalOpen} style={playerModalOpen ? { pointerEvents: 'none' } : undefined}>
+              <TabPanels>
+                <TabPanel><HomeGrid onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedTmdbId={selectedTmdbId} selectedGenre={selectedGenre} /></TabPanel>
+                <TabPanel><TVPage genres={tvGenres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
+                <TabPanel><MoviesPage genres={genres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
+                <TabPanel><div>New & Popular content here</div></TabPanel>
+                <TabPanel><div>My List content here</div></TabPanel>
+                <TabPanel><div>Browse by Languages content here</div></TabPanel>
+                <TabPanel><SearchPage movieGenres={genres} tvGenres={tvGenres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} onSelectPerson={handleSelectPerson} onSelectCollection={handleGoToCollections} /></TabPanel>
+                <TabPanel><ProfilePage /></TabPanel>
+                <TabPanel><CollectionsPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedCollectionId={selectedCollectionId} /></TabPanel>
+                <TabPanel><DetailsPage tmdbId={detailsTmdbId} itemTypeHint={detailsType} onPlay={handlePlayMovie} onSelect={handleSelectMovie} onSelectPerson={handleSelectPerson} onGoToCollections={handleGoToCollections} /></TabPanel>
+                <TabPanel><VideoPlayerPage playerType={playerType} params={playerParams} onBack={handleBackFromPlayer} /></TabPanel>
+                <TabPanel><PersonPage personId={selectedPersonId} onSelectWork={handleSelectMovie} /></TabPanel>
+              </TabPanels>
+            </div>
           {/* Modal removed — Play now opens the Player tab where `VideoPlayerPage` renders the embedded player */}
-        </Tabs>
-        </div>
+          </Tabs>
       </ErrorBoundary>
     </ChakraProvider>
     {playerModalOpen && (

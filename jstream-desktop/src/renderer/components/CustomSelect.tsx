@@ -8,13 +8,15 @@ export default function CustomSelect({
   options,
   onChange,
   placeholder,
-  id
+  id,
+  disabled = false
 }: {
   value?: string | number | null;
   options: Option[];
   onChange: (v: string | number) => void;
   placeholder?: string;
   id?: string;
+  disabled?: boolean;
 }){
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -37,13 +39,14 @@ export default function CustomSelect({
   const selected = options.find(o => String(o.value) === String(value));
 
   function handleKey(e: React.KeyboardEvent){
+    if (disabled) return;
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o); }
     if (e.key === 'Escape') setOpen(false);
   }
 
   return (
     <div className="dropdown" ref={ref} style={{display:'inline-block'}}>
-      <button id={id} ref={toggleRef} type="button" className="dropdown-toggle" aria-haspopup="listbox" aria-expanded={open} onClick={()=>{
+      <button id={id} ref={toggleRef} type="button" className="dropdown-toggle" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} onClick={()=>{
         setOpen(v=>{
           const next = !v;
           if (next && toggleRef.current) {

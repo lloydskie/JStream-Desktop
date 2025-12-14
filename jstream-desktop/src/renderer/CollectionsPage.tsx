@@ -84,7 +84,7 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie, selectedCo
     if (p === 1) setLoadingFeed(true);
     setFeedLoadingMore(true);
     try {
-      const res = await (window as any).tmdbExports.fetchCollectionsFeed({ tryDays: 10, page: p, perPage: 24 });
+      const res = await (window as any).tmdbExports.fetchCollectionsFeed({ tryDays: 365, page: p, perPage: 800 });
       const { items = [], hasMore = false, error } = res || {};
       if (error) {
         setFeedError(error);
@@ -256,20 +256,20 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie, selectedCo
 
   return (
     <Box>
-      <div style={{display:'flex',gap:12,alignItems:'center',marginBottom:8}}>
-        <div style={{fontSize:12,color:'var(--muted)'}}>Feed: {feedStats.filled}/{feedStats.total} loaded ({feedStats.placeholders} placeholders)</div>
-        {feedStats.filled < feedStats.total && (
-          <Button size="sm" variant="ghost" onClick={() => loadFeedPage(feedPage)}>Retry</Button>
-        )}
-      </div>
-      <form style={{display:'flex',gap:8,alignItems:'center',marginBottom:12}}>
-        <Input placeholder="Search collections..." value={query} onChange={e=> setQuery(e.target.value)} />
+      <form style={{display:'flex',gap:8,alignItems:'center',marginBottom:12}} onSubmit={(e) => e.preventDefault()}>
+        <Input type="text" placeholder="Search collections..." value={query} onChange={e=> setQuery(e.target.value)} />
       </form>
 
       <div style={{marginBottom:16}}>
         <h3 style={{margin: '6px 0', fontSize:16, fontWeight:800}}>Collections</h3>
         {loadingFeed && !query.trim() ? (
-          <div style={{padding:12, textAlign:'center'}}><Spinner /></div>
+          <div style={{padding:12, textAlign:'center'}}>
+            <div style={{marginBottom: 8}}>Loading collections...</div>
+            <div style={{width: '100%', height: '20px', background: '#ddd', borderRadius: '10px'}}>
+              <div style={{width: `${feedStats.total > 0 ? (feedStats.filled / feedStats.total) * 100 : 0}%`, height: '100%', background: '#3182ce', borderRadius: '10px', transition: 'width 0.3s ease'}}></div>
+            </div>
+            <div style={{marginTop: 8, fontSize: 12, color: 'var(--muted)'}}>{feedStats.filled} / {feedStats.total} loaded</div>
+          </div>
         ) : filteredFeed.length === 0 ? (
           <div style={{color:'var(--muted)', padding:12, textAlign:'center'}}>{feedError ? `Feed error: ${feedError}` : query.trim() ? 'No collections match your search.' : 'No feed available. Try searching or run the daily export service.'}</div>
         ) : query.trim() ? (

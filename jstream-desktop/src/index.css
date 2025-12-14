@@ -1,14 +1,26 @@
 :root{
-  --bg:#0b0f14;
-  --surface:#111316;
-  --card:#16181c;
+  /* Global dark theme: base background should be #141414 (user request) */
+  --bg:#141414;
+  /* surface/card tones kept slightly lighter/darker but never darker than #060606 */
+  --surface:#0d0d0d;
+  --card:#121212;
   --accent:#e50914; /* Netflix red */
+  --header-height: 56px;
   --muted:#9aa3ad;
   --glass: rgba(255,255,255,0.04);
   --poster-small: 180px;
   --poster-medium: 220px;
   --poster-large: 300px;
 }
+
+/* Ensure the portal header root is fixed to the top so the navbar stays at the top of the viewport */
+#header-root{
+  position: fixed;
+  inset: 0 0 auto 0; /* top:0; left:0; right:0 */
+  z-index: 10001;
+  pointer-events: none; /* allow header children to control pointer events */
+}
+#header-root > .app-header{ pointer-events: auto; }
 
 *{box-sizing:border-box}
 html,body,#root{height:100%; min-height:100%}
@@ -19,7 +31,8 @@ html::before{
   inset: 0;
   z-index: -9999;
   pointer-events: none;
-  background: linear-gradient(180deg, var(--bg) 0%, #070809 100%);
+  /* ensure gradient end (darkest black used) is #060606 as requested */
+  background: linear-gradient(180deg, var(--bg) 0%, #060606 100%);
   background-repeat: no-repeat;
   background-size: cover;
 }
@@ -35,7 +48,7 @@ body{
 }
 
 .app-shell{
-  padding: 24px 28px;
+  padding: calc(var(--header-height) + 8px) 28px 24px;
   max-width: 1400px;
   margin: 0 auto;
   min-height: 100vh; /* ensure content area fills viewport */
@@ -48,17 +61,27 @@ body{
 .app-header{
   display:flex;
   align-items:center;
-  justify-content:space-between;
+  justify-content:flex-start;
   gap:12px;
   margin-bottom:18px;
-  position: relative;
-  z-index: 10;
+  position: sticky;
+  top: 0;
+  /* ensure header always floats above full-bleed hero */
+  z-index: 10000;
+  background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, transparent 100%);
+  backdrop-filter: blur(10px);
+  border-radius: 8px;
+  padding: 8px 16px;
+  min-height: var(--header-height);
 }
 
+.app-header .header-controls{ margin-left: auto; }
+
+.app-header [role="tablist"]{ display:flex; gap:18px; align-items:center; padding-top: 20px; }
+
 /* place top-nav centered between brand and header-controls */
-.app-header .top-nav{ flex:1; display:flex; justify-content:center; align-items:center; }
 .app-header .brand{ flex:0 0 auto; }
-.app-header .header-controls{ flex:0 0 auto; }
+.app-header .header-controls{ flex:0 0 auto; margin-left: auto; }
 
 .brand{
   display:flex;
@@ -119,8 +142,8 @@ body{
 .movie-card:hover .play-circle, .movie-card:focus .play-circle{ border-color: rgba(229,9,20,0.95); box-shadow: 0 6px 18px rgba(229,9,20,0.12); }
 
 /* Tab hover/focus effects */
-.top-nav [role="tab"]:hover{ background: rgba(229,9,20,0.06); color: #fff; }
-.top-nav [role="tab"]:focus-visible{ box-shadow: 0 6px 18px rgba(229,9,20,0.08); outline: none; border-radius:8px; }
+.app-header [role="tab"]:hover{ background: rgba(229,9,20,0.06); color: #fff; }
+.app-header [role="tab"]:focus-visible{ box-shadow: 0 6px 18px rgba(229,9,20,0.08); outline: none; border-radius:8px; }
 
 /* Small visual lift for focused items in rows for keyboard users */
 .row-scroll .movie-card:focus-visible{ transform: translateY(-4px) scale(1.01); box-shadow: 0 12px 30px rgba(229,9,20,0.08); }
@@ -134,8 +157,24 @@ body{
 .movie-overview{ font-size:13px; color:#c7c7c7; opacity:0.9 }
 
 .card-actions{ display:flex; gap:8px; align-items:center; margin-top:10px }
-.play-cta{ background:var(--accent); color:#fff; border-radius:6px; padding:6px 10px; font-weight:600; font-size:13px }
-.fav-btn{ background:transparent; color:var(--muted); border:none; font-size:16px }
+.play-cta{ background:var(--accent); color:#fff; border-radius:6px; padding:0 12px; font-weight:600; font-size:13px; display:inline-flex; align-items:center; gap:8px; height:44px }
+.play-cta .play-icon{ display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px }
+.fav-btn{ background:transparent; color:var(--muted); border:none; font-size:16px; padding:0 8px; height:44px; display:inline-flex; align-items:center }
+.more-info-btn{
+  background: rgba(255,255,255,0.06);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  height: 44px;
+}
+.more-info-btn svg{ display:inline-block; flex:0 0 auto }
+.more-info-btn span{ font-size:13px; font-weight:600 }
+.more-info-btn:hover{ background: rgba(255,255,255,0.10) }
 .now-badge{ background:var(--accent); color:#fff; padding:4px 6px; border-radius:4px; font-size:11px }
 
 /* show overlay play icon on hover */
@@ -195,13 +234,7 @@ body{
   .detail-poster{ width:100%; max-width:320px }
 }
 
-/* Position the top navigation 'on' the header and center it relative to the viewport */
-.app-header{ position: relative; min-height:64px; align-items:center }
-/* center the nav in the header */
-.top-nav{ position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 5 }
-.top-nav [role="tablist"]{ display:flex; gap:18px; align-items:center }
-/* Ensure tabs have consistent height and vertical centering across breakpoints */
-.top-nav [role="tab"]{ display:inline-flex; align-items:center; justify-content:center; height:44px; min-height:44px; padding:6px 14px; line-height:1 }
+/* Positioning for top navigation handled by .app-header above; keep consistent tab sizing below */
 
 /* focused row for keyboard navigation */
 .focused-row{ outline: 2px solid rgba(229,9,20,0.15); box-shadow: 0 8px 30px rgba(229,9,20,0.08); transform: translateY(-4px) }
@@ -218,14 +251,85 @@ body{
 
 /* hero banner */
 .hero-banner{ position:relative; height:56vh; min-height:380px; border-radius:10px; background-size:cover; background-position:center; margin-bottom:20px; overflow:hidden }
-.hero-overlay{ width:100%; height:100%; background: linear-gradient(180deg, rgba(0,0,0,0.15) 10%, rgba(0,0,0,0.6) 60%); display:flex; align-items:flex-end }
-.hero-content{ padding:36px; max-width:720px; position:relative; z-index:2 }
+.hero-banner.full-bleed{
+  /* when portal-mounted into #hero-root the hero is a top-level block and should sit in normal flow */
+  position: relative;
+  width: 100vw; /* span the full viewport width */
+  left: 50%;
+  transform: translateX(-50%);
+  /* include the header height so the hero extends up behind the navbar */
+  height: calc(72vh + var(--header-height));
+  min-height: calc(420px + var(--header-height));
+  border-radius: 0;
+  padding: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+  /* place the hero above the main app content but below the header */
+  z-index: 0; /* keep hero behind header */
+  background-position: center top; /* prefer top for full-bleed framing */
+}
+
+/* spacer element inserted after the hero to push the centered content below it */
+.hero-spacer{ height: calc(72vh + var(--header-height)); min-height: calc(420px + var(--header-height)); background: transparent; pointer-events: none; }
+
+/* ensure hero content floats above app-shell children but remains below header */
+.hero-banner.full-bleed .hero-content{ z-index: 6; }
+.hero-overlay{ position:absolute; inset:0; pointer-events:none; background: linear-gradient(180deg, rgba(0,0,0,0.15) 10%, rgba(0,0,0,0.6) 60%); }
+.hero-content{ padding:36px; max-width:720px; position:relative; z-index:1; pointer-events:auto }
 .hero-trailer{ position:absolute; inset:0; z-index:0; overflow:hidden; display:block }
-.hero-trailer iframe{ position:absolute; inset:0; width:100%; height:100%; border:0; object-fit:cover; pointer-events:none }
+.hero-trailer iframe{ position:absolute; inset:0; width:100%; height:100%; border:0; pointer-events:none; object-fit:cover; }
+@media (max-width: 900px){
+  .hero-trailer iframe{ object-position: center top; }
+}
 .hero-trailer-fallback{ margin-top:8px; background: rgba(0,0,0,0.5); color: #fff; padding:6px 8px; border-radius:6px; font-size:13px; display:inline-block }
 .hero-title{ font-size:40px; font-weight:800; margin:0 0 12px 0 }
 .hero-overview{ color: #e6e6e6; max-height:72px; overflow:hidden; margin-bottom:16px }
-.hero-actions{ display:flex; gap:12px }
+.hero-actions{ display:flex; gap:12px; align-items:center; height:44px }
+
+/* Center hero content for the full-bleed homepage hero and nudge it toward the lower-middle */
+.hero-banner.full-bleed .hero-overlay{
+  display:flex;
+  align-items:center; /* vertical centering baseline */
+  justify-content:center; /* horizontal centering */
+  padding: 0 16px; /* keep a small safe padding for text on tiny screens */
+  box-sizing: border-box;
+  /* ensure overlay extends behind the sticky header and gives a stronger dark band
+     so content placed in the lower-middle reads well against bright backdrops */
+  padding-top: var(--header-height);
+  background: linear-gradient(180deg, rgba(0,0,0,0.22) 0%, rgba(0,0,0,0.74) 78%);
+}
+.hero-banner.full-bleed .hero-content{
+  /* left-aligned and lower-left placement */
+  position: absolute;
+  left: 2%;
+  bottom: 8%;
+  padding: 32px 24px;
+  max-width: 720px;
+  z-index:2;
+  text-align:left;
+  transform: translateY(0);
+}
+@media (max-width: 900px){
+  .hero-banner.full-bleed .hero-overlay{ align-items:flex-end; }
+  .hero-banner.full-bleed .hero-content{ position:relative; bottom:auto; left:auto; padding:20px; max-width:100%; text-align:left; }
+}
+
+/* Logo styling (title logo image) */
+.hero-logo{ max-width:320px; width:48%; height:auto; display:block; transition: transform 420ms cubic-bezier(.2,.9,.2,1), opacity 300ms ease; transform: translateY(-30%); }
+.hero-logo.logo-lower{ transform: translateY(-10%); }
+
+/* Overview expand/collapse animations */
+.hero-overview{ color: #e6e6e6; overflow:hidden; transition: max-height 360ms ease, opacity 360ms ease, transform 360ms ease; max-height:120px; transform: translateY(0); opacity:1 }
+.hero-overview.collapsed{ max-height:0; opacity:0; transform: translateY(-6px); }
+.hero-overview.expanded{ max-height:420px; opacity:1; transform: translateY(0); }
+
+/* When trailer is playing, ensure content has compact layout */
+.hero-banner.full-bleed.playing .hero-overview.collapsed{ max-height:0; opacity:0; transform: translateY(-6px); }
+.hero-banner.full-bleed.playing .hero-logo{ transform: translateY(-10%); }
+
+/* Ensure action buttons remain visible above logo and move down when logo shifts */
+.hero-actions{ position: relative; z-index: 10; transition: transform 420ms cubic-bezier(.2,.9,.2,1); }
+.hero-banner.full-bleed.playing .hero-actions{ transform: translateY(10%); }
 
 /* Detail hero adjustments for backdrop, autoplay trailer and full-bleed layout */
 /* Make the detail hero break out of the centered content container and use the full viewport width, starting from the top */
@@ -293,6 +397,50 @@ body{
   transition: background 0.2s ease;
 }
 .mute-btn:hover{ background: rgba(255,255,255,0.06); }
+
+/* Right-side hero mute button (separate from hero-content) */
+.hero-mute-right{
+  position: absolute;
+  right: 2%;
+  /* anchor to the hero-content bottom so it sits opposite the hero-actions row */
+  bottom: calc(8% + 32px);
+  z-index: 12;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.44);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255,255,255,0.04);
+  color: #fff;
+  cursor: pointer;
+  transition: background 160ms ease, transform 120ms ease;
+}
+.hero-mute-right:hover{ background: rgba(255,255,255,0.06); transform: scale(1.03); }
+@media (max-width: 900px){ .hero-mute-right{ right: 12px; bottom: calc(var(--header-height) + 8px); } }
+
+/* Certification pill positioned beside the mute button */
+.hero-certification{
+  position: absolute;
+  /* place to the left of the mute button which is anchored at right:2% */
+  right: calc(2% + 56px);
+  bottom: calc(8% + 32px);
+  z-index: 13;
+  background: rgba(0,0,0,0.56);
+  color: #fff;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 12px;
+  border: 1px solid rgba(255,255,255,0.04);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+@media (max-width: 900px){ .hero-certification{ right: 12px; bottom: calc(var(--header-height) + 8px + 48px); } }
 
 /* Netflix-themed interactive elements: buttons, dropdowns, inputs, and filter pills */
 .button, .btn { display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border-radius:6px; background:rgba(255,255,255,0.04); color:#fff; border:1px solid rgba(255,255,255,0.04); cursor:pointer; transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease; }
@@ -469,20 +617,18 @@ select.search-input, select.input{ min-width: 64px }
 @media (max-width: 767px){ .header-controls{ display:none !important } }
 
 /* hide the top tab navigation on small screens (mobile menu will provide navigation) */
-.top-nav{ display:block }
-@media (max-width: 767px){ .top-nav{ display:none !important } }
+.app-header [role="tablist"]{ display:flex; }
+@media (max-width: 767px){ .app-header [role="tablist"]{ display:none !important } }
 
 /* Desktop nav alignment fixes */
 @media (min-width: 768px) {
-  .top-nav{ display:flex; justify-content:center; align-items:center; width:100%; margin-bottom:12px; }
-  .top-nav [role="tablist"]{ display:flex; gap:18px; align-items:center; }
   /* Normalize tab sizes and alignment so every nav item is the same height */
-  .top-nav [role="tab"]{
+  .app-header [role="tab"]{
     color: #fff;
     /* keep font-size and visual styling; heights are set above for consistency */
     font-size: 15px;
   }
-  .top-nav [role="tab"][aria-selected="true"]{ background: rgba(255,255,255,0.04); color: #fff; }
+  .app-header [role="tab"][aria-selected="true"]{ background: rgba(255,255,255,0.04); color: #fff; }
 }
 
 /* Custom scrollbars — consistent, Netflix-red accent */

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, Button, Spinner, HStack, Text } from '@chakra-ui/react';
 import CustomSelect from './components/CustomSelect';
+import PlusMinusIcon from './components/icons/PlusMinusIcon';
 import { fetchTMDB } from '../utils/tmdbClient';
 
 export default function DetailsPage({ tmdbId, itemTypeHint, onPlay, onSelect, onSelectPerson, onGoToCollections }: { tmdbId?: number | null, itemTypeHint?: 'movie'|'tv'|null, onPlay?: (tmdbId: number | string, type?: 'movie'|'tv'|'anime', params?: Record<string, any>) => void, onSelect?: (tmdbId: number, type?: 'movie'|'tv') => void, onSelectPerson?: (personId:number)=>void, onGoToCollections?: (collectionId?: number) => void }) {
@@ -401,8 +402,8 @@ export default function DetailsPage({ tmdbId, itemTypeHint, onPlay, onSelect, on
               {onPlay && itemType === 'tv' && (
                 <Button onClick={(e) => { e.stopPropagation(); onPlay(tmdbId, 'tv', { tmdbId, season: 1, episode: 1 }); }} className="button primary">Play</Button>
               )}
-              <Button aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'} onClick={(e) => { e.stopPropagation(); toggleFavorite(); }} variant="ghost" style={{ padding: 6 }}>
-                <span style={{fontSize:18, lineHeight:1, color: isFavorite ? '#D81F26' : 'var(--muted)'}}>{isFavorite ? '♥' : '♡'}</span>
+              <Button aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'} onClick={(e) => { e.stopPropagation(); toggleFavorite(); }} variant="ghost" style={{ padding: 6 }} title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}>
+                <PlusMinusIcon isMinus={isFavorite} size={18} color={isFavorite ? '#D81F26' : 'var(--muted)'} />
               </Button>
               {item && item.belongs_to_collection && onGoToCollections && (
                 <Button 

@@ -9,6 +9,10 @@
 
   </head>
   <body>
+    <!-- top-level portal target for full-bleed hero so it can live outside centered app shell -->
+    <div id="hero-root"></div>
+    <!-- portal target for the sticky header so it isn't constrained by #root layout -->
+    <div id="header-root"></div>
     <div id="root"></div>
     <script type="module" src="/src/renderer.tsx"></script>
   </body>
