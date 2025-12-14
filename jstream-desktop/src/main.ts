@@ -291,12 +291,16 @@ const TMDB_CACHE_TTL = 1000 * 60 * 10; // 10 minutes
 
 // Simple per-webContents rate limit (token bucket-like)
 const rateLimits = new Map<number, { count: number, resetAt: number, limit: number }>();
-function allowRequestFor(contentsId: number, limit = 60) {
+function allowRequestFor(contentsId: number, limit = 120) {
   const now = Date.now();
   const rec = rateLimits.get(contentsId) || { count: 0, resetAt: now + 60_000, limit };
   if (now > rec.resetAt) {
     rec.count = 0;
     rec.resetAt = now + 60_000;
+  }
+  // Log progress occasionally to help debugging rate issues
+  if (rec.count > 0 && rec.count % Math.max(1, Math.floor(rec.limit / 4)) === 0) {
+    console.log(`tmdb rate usage for contents ${contentsId}: ${rec.count}/${rec.limit}`);
   }
   if (rec.count < rec.limit) {
     rec.count++;
@@ -304,6 +308,7 @@ function allowRequestFor(contentsId: number, limit = 60) {
     return true;
   }
   rateLimits.set(contentsId, rec);
+  console.warn(`tmdb rate limit exceeded for contents ${contentsId}: ${rec.count}/${rec.limit}, resets in ${Math.ceil((rec.resetAt - now)/1000)}s`);
   return false;
 }
 

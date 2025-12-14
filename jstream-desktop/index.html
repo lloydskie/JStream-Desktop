@@ -4,7 +4,8 @@
     <meta charset="UTF-8" />
     <title>Hello World!</title>
     <!-- Content Security Policy: For development, Vite/Electron requires 'unsafe-eval'. Remove or tighten this before production builds. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; connect-src 'self' http://localhost:5173 https://api.themoviedb.org https://player.videasy.net; frame-src 'self' https://player.videasy.net; child-src 'self' https://player.videasy.net;">
+    <!-- Added firebase remote-config and YouTube origins so renderer can fetch remote config and embed YouTube players. Only add trusted sources. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; connect-src 'self' http://localhost:5173 https://api.themoviedb.org https://player.videasy.net https://firebaseremoteconfig.googleapis.com; frame-src 'self' https://player.videasy.net https://www.youtube.com https://www.youtube-nocookie.com; child-src 'self' https://player.videasy.net;">
 
   </head>
   <body>
