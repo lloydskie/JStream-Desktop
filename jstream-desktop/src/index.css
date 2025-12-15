@@ -405,49 +405,57 @@ body{
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 56px; /* narrow width, full height */
-  border-radius: 12px;
+  /* Increase default width so the overlay extends farther toward the viewport edge */
+  width: 96px;
+  border-radius: 0; /* no rounding on edges */
   display:flex;
   align-items:center;
   justify-content:center;
-  background: linear-gradient(to right, rgba(6,6,6,0.78), rgba(6,6,6,0.12));
+  /* Semi-transparent solid background (no blur) to keep the UI crisp */
+  background: rgba(0,0,0,0.45);
   color: #fff;
   border: none;
   z-index: 2200;
   cursor: pointer;
-  backdrop-filter: blur(6px);
   transition: transform 160ms ease, background 160ms ease, opacity 160ms ease;
   padding: 0 6px;
+  overflow: hidden;
 }
-.continue-scroll-button svg{ display:block; width:24px; height:24px }
-.continue-scroll-button.left{ left: 6px; background: linear-gradient(to right, rgba(6,6,6,0.86), rgba(6,6,6,0.0)); }
-.continue-scroll-button.right{ right: 6px; background: linear-gradient(to left, rgba(6,6,6,0.86), rgba(6,6,6,0.0)); }
+.continue-scroll-button svg{ display:block; width:32px; height:32px }
+.continue-scroll-button.left{ left: 0; border-radius: 0; background: rgba(0,0,0,0.45); }
+.continue-scroll-button.right{ right: 0; border-radius: 0; background: rgba(0,0,0,0.45); }
 .continue-scroll-button:hover{ transform: scale(1.02); }
 .continue-scroll-button:active{ transform: scale(0.98); }
 .continue-scroll-button[disabled]{ opacity:0.18; pointer-events:none }
 
 @media (max-width: 900px) {
-  .continue-scroll-button{ width:44px }
-  .continue-scroll-button svg{ width:20px; height:20px }
+  /* On smaller screens keep overlays reasonably sized but still flush to edge */
+  .continue-scroll-button{ width:64px }
+  .continue-scroll-button svg{ width:24px; height:24px }
 }
 
-/* Hide scroll buttons when not interacting with the row; show on hover or keyboard focus */
-.continue-scroll-wrapper .continue-scroll-button{ opacity:0; visibility:hidden; transform: translateX(0); transition: transform 160ms ease, opacity 160ms ease, visibility 160ms; }
+@media (min-width: 1400px) {
+  /* On very wide viewports, extend overlays further so they visually reach the viewport edge */
+  .continue-scroll-button{ width:140px }
+}
+
+/* Show scroll buttons by default; only hide when disabled (no scroll available). */
+.continue-scroll-wrapper .continue-scroll-button{ opacity:1; visibility:visible; transform: none; transition: transform 160ms ease, opacity 160ms ease; }
 .continue-scroll-wrapper:focus-within .continue-scroll-button,
 .continue-scroll-wrapper:hover .continue-scroll-button{ opacity:1; visibility:visible; }
 
 /* Same behavior for generic row scrollers */
-.row-scroll-wrapper .continue-scroll-button{ opacity:0; visibility:hidden; transform: translateX(0); transition: transform 160ms ease, opacity 160ms ease, visibility 160ms; }
+.row-scroll-wrapper .continue-scroll-button{ opacity:1; visibility:visible; transform: none; transition: transform 160ms ease, opacity 160ms ease; }
 .row-scroll-wrapper:focus-within .continue-scroll-button,
 .row-scroll-wrapper:hover .continue-scroll-button{ opacity:1; visibility:visible; }
 
-/* slide effect for left/right when showing */
-.continue-scroll-button.left{ transform: translateX(-8px); }
+/* Keep scroll buttons stationary by default; subtle scale on hover for affordance */
+.continue-scroll-button.left{ transform: none; }
 .continue-scroll-wrapper:hover .continue-scroll-button.left,
-.continue-scroll-wrapper:focus-within .continue-scroll-button.left{ transform: translateX(0); }
-.continue-scroll-button.right{ transform: translateX(8px); }
+.continue-scroll-wrapper:focus-within .continue-scroll-button.left{ transform: scale(1.02); }
+.continue-scroll-button.right{ transform: none; }
 .continue-scroll-wrapper:hover .continue-scroll-button.right,
-.continue-scroll-wrapper:focus-within .continue-scroll-button.right{ transform: translateX(0); }
+.continue-scroll-wrapper:focus-within .continue-scroll-button.right{ transform: scale(1.02); }
 
 /* Fully hide when disabled (no layout/runtime presence) */
 .continue-scroll-button.disabled, .continue-scroll-button[disabled]{ display: none !important; }
@@ -813,7 +821,7 @@ select.search-input, select.input{ min-width: 64px }
   display:flex; flex-direction:column;
   transition: width 220ms cubic-bezier(.2,.9,.2,1), height 220ms cubic-bezier(.2,.9,.2,1), transform 220ms cubic-bezier(.2,.9,.2,1);
 }
-.preview-modal-overlay.show .preview-modal{ width: var(--target-w,360px); height: var(--target-h,280px); }
+.preview-modal-overlay.show .preview-modal{ width: var(--target-w,420px); height: var(--target-h,320px); }
 
 /* Force overlay above all app content (including transformed stacking contexts) */
 .preview-modal-overlay{ z-index: 2147483647 !important; }
@@ -822,10 +830,15 @@ select.search-input, select.input{ min-width: 64px }
 .preview-open .continue-card { z-index: 5; }
 .preview-backdrop{ flex:0 0 60%; background-size:cover; background-position:center; position:relative }
 .preview-iframe{ position:absolute; inset:0; width:100%; height:100%; border:0 }
-.preview-info{ flex:1 1 auto; padding:10px 12px; display:flex; flex-direction:column; justify-content:center; gap:6px }
+.preview-info{ flex:1 1 auto; padding:10px 12px; display:flex; flex-direction:column; justify-content:center; gap:6px; background: #181818; }
 .preview-actions{ display:flex; gap:8px; align-items:center }
-.preview-btn{ display:inline-flex; align-items:center; gap:8px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.06); color:#fff; padding:6px 10px; border-radius:6px; cursor:pointer }
+.preview-actions-left{ display:flex; gap:8px; align-items:center }
+.preview-actions-right{ margin-left: auto; display:flex; gap:8px; align-items:center }
+.preview-btn{ display:inline-flex; align-items:center; justify-content:center; gap:8px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.06); color:#fff; height:40px; min-width:44px; padding:0 12px; box-sizing:border-box; border-radius:6px; cursor:pointer; font-size:13px }
 .preview-btn.play{ background:#fff; color:#000; font-weight:600 }
+/* uniform icon/text sizing inside preview buttons */
+.preview-btn svg{ width:18px; height:18px; display:block }
+.preview-btn span{ display:inline-block; margin-left:6px; line-height:1 }
 .preview-metadata{ display:flex; gap:8px; color:var(--muted); font-size:12px }
 .preview-title{ color:#fff; font-weight:700; font-size:14px }
 

@@ -241,18 +241,35 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
       } catch (e) { /* ignore */ }
     }
     function resume() {
+      // clear the external pause flag and attempt to play the iframe —
+      // schedule a tiny timeout so the pausedExternally state update has taken effect
       setPausedExternally(false);
       try {
         const el = document.querySelector('.hero-trailer iframe') as HTMLIFrameElement | null;
         if (el && el.contentWindow) {
-          // resume via YouTube JS API
           el.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
         }
       } catch (e) { /* ignore */ }
-      if (trailerKey && !pausedExternally) setIsPlaying(true);
+      // ensure visual `isPlaying` flips after state update
+      setTimeout(() => {
+        if (trailerKey) setIsPlaying(true);
+      }, 60);
     }
+
     try { (window as any).__appTrailerController = { pause, resume }; } catch (e) { /* ignore */ }
-    return () => { try { delete (window as any).__appTrailerController; } catch (e) { /* ignore */ } };
+
+    // Also listen for global custom events so components that dispatch events
+    // can control the hero even if they cannot access the controller directly.
+    const onPauseEvt = () => pause();
+    const onResumeEvt = () => resume();
+    window.addEventListener('app:pause-hero-trailer', onPauseEvt as EventListener);
+    window.addEventListener('app:resume-hero-trailer', onResumeEvt as EventListener);
+
+    return () => {
+      try { delete (window as any).__appTrailerController; } catch (e) { /* ignore */ }
+      try { window.removeEventListener('app:pause-hero-trailer', onPauseEvt as EventListener); } catch (e) { /* ignore */ }
+      try { window.removeEventListener('app:resume-hero-trailer', onResumeEvt as EventListener); } catch (e) { /* ignore */ }
+    };
   }, [trailerKey, pausedExternally]);
 
   // user interaction expands overview; auto-collapse after inactivity

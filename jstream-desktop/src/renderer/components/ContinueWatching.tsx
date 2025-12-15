@@ -319,8 +319,23 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
                   const rect = el.getBoundingClientRect();
                   setLastCardRect(rect);
                   // compute center point of the card in viewport coords
-                  const centerX = rect.left + rect.width / 2;
-                  const centerY = rect.top + rect.height / 2;
+                  let centerX = rect.left + rect.width / 2;
+                  let centerY = rect.top + rect.height / 2;
+                  // Clamp modal center so expanded modal doesn't clip off-screen.
+                  // Use the same target size as the CSS variables (360x280) and a small viewport margin.
+                  const TARGET_W = 420;
+                  const TARGET_H = 320;
+                  const MARGIN = 8; // px
+                  const halfW = TARGET_W / 2;
+                  const halfH = TARGET_H / 2;
+                  const minX = MARGIN + halfW;
+                  const maxX = (window.innerWidth || document.documentElement.clientWidth) - MARGIN - halfW;
+                  const minY = MARGIN + halfH;
+                  const maxY = (window.innerHeight || document.documentElement.clientHeight) - MARGIN - halfH;
+                  if (centerX < minX) centerX = minX;
+                  if (centerX > maxX) centerX = maxX;
+                  if (centerY < minY) centerY = minY;
+                  if (centerY > maxY) centerY = maxY;
                   setPreviewModalPos({ left: centerX, top: centerY });
                   // show modal and start enter animation next frame
                   setShowPreviewModal(true);
@@ -405,8 +420,8 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
             style={{ position: 'fixed', left: previewModalPos.left, top: previewModalPos.top, zIndex: 2147483647, // set CSS vars for animation start/target
               ['--init-w' as any]: lastCardRect ? `${lastCardRect.width}px` : '232.962px',
               ['--init-h' as any]: lastCardRect ? `${lastCardRect.height}px` : '131.163px',
-              ['--target-w' as any]: '360px',
-              ['--target-h' as any]: '280px'
+              ['--target-w' as any]: '420px',
+              ['--target-h' as any]: '320px'
             }}
             onMouseEnter={() => { if (previewTimeoutRef.current) { window.clearTimeout(previewTimeoutRef.current); previewTimeoutRef.current = null; } setPreviewAnimating(true); }}
             onMouseLeave={() => {
@@ -415,30 +430,106 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
                 setShowPreviewModal(false);
                 setHoverIndex(null);
                 setHoverTrailerKey(null);
+                // Resume global hero trailer when the modal is closed from the modal itself
+                try {
+                  const ctrl = (window as any).__appTrailerController;
+                  if (ctrl && typeof ctrl.resume === 'function') ctrl.resume();
+                  else window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
+                } catch (e) { window.dispatchEvent(new CustomEvent('app:resume-hero-trailer')); }
               }, 220);
             }}
           >
             <div className="preview-modal" role="dialog" aria-hidden={!previewAnimating}>
               <div className="preview-backdrop" style={{ backgroundImage: `url(https://image.tmdb.org/t/p/original${items[hoverIndex].backdrop})` }}>
                 {hoverTrailerKey ? (
-                  <iframe className="preview-iframe" src={`https://www.youtube.com/embed/${hoverTrailerKey}?rel=0&autoplay=1&mute=1&controls=0&playsinline=1&modestbranding=1`} title="Preview" frameBorder="0" allow="autoplay; encrypted-media" />
+                  <iframe
+                    className="preview-iframe"
+                    src={`https://www.youtube.com/embed/${hoverTrailerKey}?rel=0&autoplay=1&mute=0&controls=0&playsinline=1&modestbranding=1&enablejsapi=1`}
+                    title="Preview"
+                    frameBorder="0"
+                    allow="autoplay; encrypted-media"
+                    style={{ pointerEvents: 'none' }}
+                    tabIndex={-1}
+                    aria-hidden="true"
+                  />
                 ) : null}
               </div>
               <div className="preview-info">
                 <div className="preview-actions">
-                  <button className="preview-btn play" aria-label="Play">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 3v18l15-9L5 3z" fill="currentColor"/></svg>
-                    <span>Play</span>
-                  </button>
-                  <button className="preview-btn" aria-label="Add to list">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                  </button>
-                  <button className="preview-btn" aria-label="Favorite">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78z" stroke="currentColor" strokeWidth="0" fill="currentColor"/></svg>
-                  </button>
-                  <button className="preview-btn" aria-label="More info">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/><path d="M12 16v-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M12 8h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                  </button>
+                  <div className="preview-actions-left">
+                    <button className="preview-btn play" aria-label="Play" onClick={(e) => {
+                      e.stopPropagation();
+                      // Prefer app-level handler if provided
+                      const it = items[hoverIndex];
+                      if (onPlay && it) {
+                        onPlay(it.id, it.type);
+                        return;
+                      }
+                      // Otherwise attempt to unmute and play the embedded YouTube iframe via postMessage
+                      try {
+                        const el = document.querySelector('.preview-iframe') as HTMLIFrameElement | null;
+                        if (el && el.contentWindow) {
+                          // Unmute then play using YouTube JS API commands
+                          el.contentWindow.postMessage('{"event":"command","func":"unMute","args":""}', '*');
+                          el.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+                        }
+                      } catch (e) { /* ignore */ }
+                    }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 3v18l15-9L5 3z" fill="currentColor"/></svg>
+                      <span>Play</span>
+                    </button>
+                    <button className="preview-btn" aria-label="Add to list" onClick={async (ev) => {
+                      ev.stopPropagation();
+                      const it = items[hoverIndex];
+                      try {
+                        const db = (window as any).database;
+                        if (db && typeof db.favoritesAdd === 'function') {
+                          await db.favoritesAdd(String(it.id), it.type || 'movie');
+                          console.debug('ContinueWatching: added to favorites', it.id);
+                        } else if (db && typeof db.watchlistAdd === 'function') {
+                          await db.watchlistAdd(String(it.id), it.type || 'movie');
+                          console.debug('ContinueWatching: added to watchlist', it.id);
+                        } else {
+                          console.debug('ContinueWatching: no DB add function available');
+                        }
+                      } catch (e) { console.error('ContinueWatching: add to list failed', e); }
+                    }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    </button>
+                    <button className="preview-btn" aria-label="Favorite" onClick={async (ev) => {
+                      ev.stopPropagation();
+                      const it = items[hoverIndex];
+                      try {
+                        const db = (window as any).database;
+                        if (db && typeof db.favoritesToggle === 'function') {
+                          await db.favoritesToggle(String(it.id), it.type || 'movie');
+                          console.debug('ContinueWatching: toggled favorite', it.id);
+                        } else if (db && typeof db.favoritesAdd === 'function') {
+                          await db.favoritesAdd(String(it.id), it.type || 'movie');
+                          console.debug('ContinueWatching: added to favorites (fallback)', it.id);
+                        } else {
+                          console.debug('ContinueWatching: no favorites API available');
+                        }
+                      } catch (e) { console.error('ContinueWatching: favorite action failed', e); }
+                    }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78z" stroke="currentColor" strokeWidth="0" fill="currentColor"/></svg>
+                    </button>
+                  </div>
+                  <div className="preview-actions-right">
+                    <button className="preview-btn" aria-label="More info" onClick={(ev) => {
+                      ev.stopPropagation();
+                      const it = items[hoverIndex];
+                      if (typeof onSelect === 'function' && it) {
+                        onSelect(it.id, it.type);
+                      } else {
+                        // fallback: dispatch a global event that other parts can listen to
+                        window.dispatchEvent(new CustomEvent('app:open-details', { detail: { id: it?.id, type: it?.type } }));
+                      }
+                    }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/><path d="M12 16v-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M12 8h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      <span>More info</span>
+                    </button>
+                  </div>
                 </div>
                 <div className="preview-metadata">
                   <span className="cert">{items[hoverIndex].data?.adult ? '18+' : (items[hoverIndex].data?.certification || '')}</span>
