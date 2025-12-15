@@ -191,6 +191,22 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
     if (child) child.scrollIntoView({ behavior: 'smooth', inline: 'center' });
   }
 
+  // Track scroller ends so we can optionally disable buttons in the future
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  React.useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const update = () => {
+      setCanScrollLeft(el.scrollLeft > 8);
+      setCanScrollRight(el.scrollWidth - el.clientWidth - el.scrollLeft > 8);
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    return () => { try { el.removeEventListener('scroll', update); } catch (e) {} window.removeEventListener('resize', update); };
+  }, [scrollerRef.current, items.length]);
+
   function handleWheel(e: React.WheelEvent) {
     const container = scrollerRef.current;
     if (!container) return;
@@ -200,6 +216,28 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
       e.stopPropagation();
     }
   }
+
+  // Attach a native non-passive wheel listener so we can call preventDefault()
+  // and stop the page from scrolling while converting vertical wheel to horizontal scroll.
+  React.useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const onWheel = (ev: WheelEvent) => {
+      try {
+        // Only convert primarily-vertical scrolls
+        if (Math.abs(ev.deltaY) > Math.abs(ev.deltaX)) {
+          el.scrollBy({ left: ev.deltaY, behavior: 'auto' });
+          ev.preventDefault();
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      try { el.removeEventListener('wheel', onWheel); } catch (e) {}
+    };
+  }, []);
 
     // Expose a small debug control when a dev flag is set so we can inspect
   // the raw recent data in the running app without modifying the DB.
@@ -238,7 +276,18 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
   return (
     <section className="continue-row">
       <h2 className="continue-title">Continue Watching</h2>
-      <div className="continue-scroll" role="list" ref={scrollerRef} onWheel={handleWheel}>
+      <div className="continue-scroll-wrapper">
+        <button disabled={!canScrollLeft} className={`continue-scroll-button left ${!canScrollLeft ? 'disabled' : ''}`} onClick={() => {
+          const el = scrollerRef.current;
+          if (!el) return;
+          const amt = Math.max(el.clientWidth * 0.8, 320);
+          el.scrollBy({ left: -amt, behavior: 'smooth' });
+        }} aria-label="Scroll left">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+        <div className="continue-scroll" role="list" ref={scrollerRef}>
         {items.map((it:any, idx:number) => (
           <div key={`${it.type}-${it.id}`} className={`continue-card ${hoverIndex===idx? 'hovered':''}`} role="listitem" onClick={() => onPlay ? onPlay(it.id, it.type) : (onSelect && onSelect(it.id, it.type))} tabIndex={0} onFocus={() => setFocusedIndex(idx)}
             onMouseEnter={async () => {
@@ -328,6 +377,17 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
             )}
           </div>
         ))}
+        </div>
+        <button disabled={!canScrollRight} className={`continue-scroll-button right ${!canScrollRight ? 'disabled' : ''}`} onClick={() => {
+          const el = scrollerRef.current;
+          if (!el) return;
+          const amt = Math.max(el.clientWidth * 0.8, 320);
+          el.scrollBy({ left: amt, behavior: 'smooth' });
+        }} aria-label="Scroll right">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M9 6L15 12L9 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
       </div>
     </section>
   );

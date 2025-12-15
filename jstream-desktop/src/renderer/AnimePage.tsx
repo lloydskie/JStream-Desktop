@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import RowScroller from './components/RowScroller';
 import { Box, Button, Spinner } from '@chakra-ui/react';
 import { fetchTMDB } from '../utils/tmdbClient';
 
@@ -168,7 +169,7 @@ export default function AnimePage({ genres = [], onSelectMovie, onPlayMovie }: {
               <Button size="sm" variant="ghost" onClick={()=>setSelectedGenre(g.id)}>More</Button>
             </div>
           </div>
-          <div className="row-scroll">
+          <RowScroller className="row-scroll">
               {loadingMap[g.id] ? (
                 <div style={{padding:12}}><Spinner /></div>
               ) : (
@@ -191,7 +192,7 @@ export default function AnimePage({ genres = [], onSelectMovie, onPlayMovie }: {
                   ));
                 })()
               )}
-          </div>
+          </RowScroller>
         </section>
       ))}
     </Box>

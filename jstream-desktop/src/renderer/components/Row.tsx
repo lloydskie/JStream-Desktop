@@ -1,13 +1,11 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { fetchTMDB } from '../../utils/tmdbClient';
+import RowScroller from './RowScroller';
 
 export default function Row({ title, movies, onSelect, onPlay }: { title: string, movies: any[], onSelect?: (id:number, type?:'movie'|'tv')=>void, onPlay?: (id:number, type?:'movie'|'tv')=>void }) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   // focus preview removed: no floating preview dialog
-
-  function scrollLeft() { scrollerRef.current?.scrollBy({left:-300, behavior:'smooth'}); }
-  function scrollRight() { scrollerRef.current?.scrollBy({left:300, behavior:'smooth'}); }
 
   useEffect(()=>{
     function keyHandler(e: KeyboardEvent){
@@ -31,25 +29,12 @@ export default function Row({ title, movies, onSelect, onPlay }: { title: string
     if (child) child.scrollIntoView({behavior:'smooth', inline:'center'});
   }
 
-  // When the mouse wheel is used over the horizontal scroller, translate vertical wheel into horizontal scroll
-  function handleWheel(e: React.WheelEvent) {
-    const container = scrollerRef.current;
-    if (!container) return;
-    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-      container.scrollBy({ left: e.deltaY, behavior: 'auto' });
-      e.preventDefault();
-      e.stopPropagation();
-    }
-  }
-
-  // global wheel capture handles translation of wheel to scroll; no local native listener needed here
+  // global wheel capture handles translation of wheel to scroll; RowScroller attaches native handler
 
   return (
     <div className="row-container">
       <div className="row-title">{title}</div>
-      <div style={{display:'flex', alignItems:'center', gap:8}}>
-        <button onClick={scrollLeft} aria-label="Scroll left" style={{background:'transparent',border:'none',color:'var(--muted)'}}>◀</button>
-        <div className="row-scroll" ref={scrollerRef} style={{position:'relative'}} onWheel={handleWheel}>
+      <RowScroller scrollerRef={scrollerRef} className="row-scroll">
           {movies.map((m, idx)=> (
             <div key={m.id} className={`movie-card ${focusedIndex===idx? 'focused-row':''}`} onClick={()=> {
               const inferred: 'movie'|'tv' = (m._media === 'tv' || m.media_type === 'tv') ? 'tv' : 'movie';
@@ -65,10 +50,7 @@ export default function Row({ title, movies, onSelect, onPlay }: { title: string
               </div>
             </div>
           ))}
-          {/* Focus preview removed */}
-        </div>
-        <button onClick={scrollRight} aria-label="Scroll right" style={{background:'transparent',border:'none',color:'var(--muted)'}}>▶</button>
-      </div>
+      </RowScroller>
     </div>
   )
 }
