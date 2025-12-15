@@ -3,7 +3,7 @@ import { Box, Button, Spinner } from '@chakra-ui/react';
 import CustomSelect from './components/CustomSelect';
 import { fetchTMDB } from '../utils/tmdbClient';
 
-export default function SearchPage({ movieGenres = [], tvGenres = [], onSelectMovie, onPlayMovie, onSelectPerson, onSelectCollection }: { movieGenres?: any[], tvGenres?: any[], onSelectMovie?: (id:number, type?:'movie'|'tv')=>void, onPlayMovie?: (id:number|string, type?:'movie'|'tv', params?:Record<string,any>)=>void, onSelectPerson?: (id:number)=>void, onSelectCollection?: (id:number)=>void }) {
+export default function SearchPage({ movieGenres = [], tvGenres = [], onSelectMovie, onPlayMovie, onSelectPerson, onSelectCollection, externalQuery, onQueryEmpty }: { movieGenres?: any[], tvGenres?: any[], onSelectMovie?: (id:number, type?:'movie'|'tv')=>void, onPlayMovie?: (id:number|string, type?:'movie'|'tv', params?:Record<string,any>)=>void, onSelectPerson?: (id:number)=>void, onSelectCollection?: (id:number)=>void, externalQuery?: string, onQueryEmpty?: ()=>void }) {
   const [query, setQuery] = useState('');
   const [mediaType, setMediaType] = useState<'all'|'movie'|'tv'|'person'|'collection'>('all');
   const [genre, setGenre] = useState<number | ''>('');
@@ -39,6 +39,14 @@ export default function SearchPage({ movieGenres = [], tvGenres = [], onSelectMo
   const searchTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    // If an external query is provided (from header input), reflect it in this page
+    if (typeof externalQuery !== 'undefined') {
+      // Only update when different to avoid resetting caret unexpectedly
+      if ((externalQuery || '') !== query) {
+        setQuery(externalQuery || '');
+      }
+    }
+
     // Clear previous timeout
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
@@ -61,6 +69,18 @@ export default function SearchPage({ movieGenres = [], tvGenres = [], onSelectMo
       }
     };
   }, [query, mediaType, genre, year, sort]);
+
+  // Notify parent when internal query becomes empty (but avoid firing on initial mount)
+  const _didMount = useRef(false);
+  useEffect(() => {
+    if (!_didMount.current) {
+      _didMount.current = true;
+      return;
+    }
+    if ((query || '').trim() === '') {
+      try { onQueryEmpty && onQueryEmpty(); } catch(e) { /* ignore */ }
+    }
+  }, [query]);
 
   // Load search history from localStorage on mount
   useEffect(() => {

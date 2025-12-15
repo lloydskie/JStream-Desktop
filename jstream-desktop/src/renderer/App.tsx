@@ -48,6 +48,10 @@ export default function App() {
   const [tvGenres, setTvGenres] = useState<any[]>([]);
   const [selectedGenre, setSelectedGenre] = useState<number | ''>('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [headerSearchQuery, setHeaderSearchQuery] = useState('');
+  const searchInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [prevActiveIndex, setPrevActiveIndex] = useState<number | null>(null);
   const [featuredMovie, setFeaturedMovie] = useState<any | null>(null);
   
 
@@ -203,9 +207,56 @@ export default function App() {
                   <Tab>Browse by Languages</Tab>
                 </TabList>
                 <div className="header-controls">
-                  <button className="search-btn button ghost" title="Search" onClick={()=> setActiveIndex(6)}>🔍</button>
-                  <button className="profile-btn button ghost" title="Profile" onClick={()=> setActiveIndex(7)}>👤</button>
-                  <button aria-label="Open menu" className="hamburger button ghost" onClick={()=> setIsMobileMenuOpen(true)} style={{marginLeft:8}}>☰</button>
+                  {/* Header search: expands inline when toggled. Typing will switch to Search tab. */}
+                  {searchOpen ? (
+                    <input
+                      ref={(el) => { searchInputRef.current = el; if (el) el.focus(); }}
+                      className={`header-search-input input ${searchOpen ? 'open' : ''}`}
+                      placeholder="Titles, peoples, gneres"
+                      value={headerSearchQuery}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setHeaderSearchQuery(v);
+                        // If user starts typing, show SearchPage and remember previous tab
+                        if (v && v.length > 0) {
+                          if (activeIndex !== 6 && prevActiveIndex === null) setPrevActiveIndex(activeIndex);
+                          setActiveIndex(6);
+                        } else {
+                          // If cleared while on Search, restore previous tab
+                          if (activeIndex === 6 && prevActiveIndex !== null) {
+                            setActiveIndex(prevActiveIndex);
+                            setPrevActiveIndex(null);
+                            setSearchOpen(false);
+                          }
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          setSearchOpen(false);
+                        }
+                      }}
+                      onBlur={() => {
+                        // close the inline input when it loses focus and is empty
+                        if (!headerSearchQuery) setSearchOpen(false);
+                      }}
+                    />
+                  ) : (
+                    <button
+                      className="search-btn button ghost"
+                      title="Search"
+                      onClick={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current && searchInputRef.current.focus(), 0); }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18,display:'block'}}>
+                        <circle cx="11" cy="11" r="6" />
+                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                      </svg>
+                    </button>
+                  )}
+
+                  <button className="profile-btn button ghost" title="Profile" onClick={() => setActiveIndex(7)}>
+                    <img src="/assets/profile-placeholder.svg" alt="Profile" style={{width:28,height:28,objectFit:'cover',borderRadius:6}} />
+                  </button>
+                  <button aria-label="Open menu" className="hamburger button ghost" onClick={() => setIsMobileMenuOpen(true)} style={{marginLeft:8}}>☰</button>
                 </div>
               </header>
             );
@@ -254,7 +305,24 @@ export default function App() {
                 <TabPanel sx={{padding: 0}}><div>New & Popular content here</div></TabPanel>
                 <TabPanel sx={{padding: 0}}><div>My List content here</div></TabPanel>
                 <TabPanel sx={{padding: 0}}><div>Browse by Languages content here</div></TabPanel>
-                <TabPanel sx={{padding: 0}}><SearchPage movieGenres={genres} tvGenres={tvGenres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} onSelectPerson={handleSelectPerson} onSelectCollection={handleGoToCollections} /></TabPanel>
+                <TabPanel sx={{padding: 0}}>
+                  <SearchPage
+                    movieGenres={genres}
+                    tvGenres={tvGenres}
+                    externalQuery={headerSearchQuery}
+                    onSelectMovie={handleSelectMovie}
+                    onPlayMovie={handlePlayMovie}
+                    onSelectPerson={handleSelectPerson}
+                    onSelectCollection={handleGoToCollections}
+                    onQueryEmpty={() => {
+                      // If SearchPage's internal query becomes empty, restore previous tab if available
+                      setActiveIndex(prevActiveIndex ?? 0);
+                      setSearchOpen(false);
+                      setHeaderSearchQuery('');
+                      setPrevActiveIndex(null);
+                    }}
+                  />
+                </TabPanel>
                 <TabPanel sx={{padding: 0}}><ProfilePage /></TabPanel>
                 <TabPanel sx={{padding: 0}}><CollectionsPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedCollectionId={selectedCollectionId} /></TabPanel>
                 <TabPanel sx={{padding: 0}}><DetailsPage tmdbId={detailsTmdbId} itemTypeHint={detailsType} onPlay={handlePlayMovie} onSelect={handleSelectMovie} onSelectPerson={handleSelectPerson} onGoToCollections={handleGoToCollections} /></TabPanel>

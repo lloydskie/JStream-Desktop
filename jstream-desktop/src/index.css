@@ -1,5 +1,3 @@
-@import url('https://fonts.cdnfonts.com/css/helvetica-neue-55');
-
 :root{
   /* Global dark theme: base background should be #141414 (user request) */
   --bg:#141414;
@@ -90,7 +88,9 @@ html::before{
 html, body, #root { background: transparent; width: 100%; }
 body{
   margin:0;
-  font-family: 'Helvetica Neue', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica', Arial, sans-serif;
+  /* Use system sans-serif stack and a lighter default weight to avoid overly bold text */
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-weight: 400;
   /* keep body background transparent so the html pseudo-element shows through */
   background-color: transparent;
   color: #fff;
@@ -127,8 +127,8 @@ body{
   top: 0;
   /* ensure header always floats above full-bleed hero */
   z-index: 10000;
-  background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, transparent 100%);
-  backdrop-filter: blur(10px);
+  /* Dark at the top, transparent at the bottom (no blur/glass effect) */
+  background: linear-gradient(180deg, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0) 100%);
   border-radius: 8px;
   padding: 8px 16px;
   min-height: var(--header-height);
@@ -452,14 +452,14 @@ body{
 /* Fully hide when disabled (no layout/runtime presence) */
 .continue-scroll-button.disabled, .continue-scroll-button[disabled]{ display: none !important; }
 .continue-scroll { height: fit-content !important; }
-.continue-card{ width: 420px; flex: 0 0 420px; border-radius:8px; overflow:visible; cursor:pointer; position:relative; display:flex; flex-direction:column; align-items:stretch; transition: transform 220ms cubic-bezier(.2,.9,.2,1), box-shadow 220ms cubic-bezier(.2,.9,.2,1), border-color 180ms ease; border: 1px solid rgba(255,255,255,0.03); }
+.continue-card{ width: 232.962px; flex: 0 0 232.962px; height: 131.163px; border-radius:8px; overflow:visible; cursor:pointer; position:relative; display:flex; flex-direction:column; align-items:stretch; transition: transform 220ms cubic-bezier(.2,.9,.2,1), box-shadow 220ms cubic-bezier(.2,.9,.2,1), border-color 180ms ease; border: 1px solid rgba(255,255,255,0.03); }
 .continue-card:hover, .continue-card:focus { transform: translateY(-6px) scale(1.02); box-shadow: 0 18px 40px rgba(229,9,20,0.12); border-color: rgba(229,9,20,0.18); }
 .continue-card:focus-visible{ outline: none; box-shadow: 0 20px 50px rgba(229,9,20,0.18), 0 6px 18px rgba(0,0,0,0.6); border-color: rgba(229,9,20,0.28); }
 .continue-card.hovered{ transform: translateY(-18px) scale(1.12); box-shadow: 0 40px 90px rgba(229,9,20,0.20); z-index: 120; }
-.continue-backdrop{ width:100%; min-height: 180px; height: auto; background-size:cover; background-position:center; position:relative; display:flex; align-items:flex-end; transition: transform 260ms ease, background-size 260ms ease; overflow:hidden; max-height:260px; }
-.continue-backdrop.placeholder{ background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.2)); min-height:120px; height:auto; }
-.continue-logo{ width: 220px; max-width:60%; margin: 12px 12px 6px 12px; display:block; filter: drop-shadow(0 6px 18px rgba(0,0,0,0.6)); max-height:64px; height:auto; object-fit:contain; }
-.continue-logo-text{ margin:12px 12px 6px 12px; font-weight:800; font-size:18px; color:#fff; text-shadow: 0 4px 12px rgba(0,0,0,0.6); }
+.continue-backdrop{ width:100%; height:100%; background-size: cover; background-position: center center; position:relative; transition: transform 260ms ease, background-size 260ms ease; overflow:hidden; }
+.continue-backdrop.placeholder{ background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.2)); height:100%; }
+.continue-logo{ position: absolute; left: 12px; bottom: 8px; width: auto; max-width: 60%; max-height: 48px; display:block; filter: drop-shadow(0 6px 18px rgba(0,0,0,0.6)); object-fit:contain; }
+.continue-logo-text{ position: absolute; left: 12px; bottom: 10px; margin:0; padding:0; font-weight:700; font-size:12px; color:#fff; text-shadow: 0 4px 12px rgba(0,0,0,0.6); }
 
 /* ensure cards don't inadvertently add bottom margin */
 .continue-card{ margin-bottom: 0; }
@@ -476,20 +476,16 @@ body{
 
 /* Larger hover expansion on wide screens: increase flex-basis more */
 @media (min-width: 1200px) {
-  .continue-card{ width: 460px; flex: 0 0 460px; }
+  .continue-card{ width: 232.962px; flex: 0 0 232.962px; height: 131.163px; }
   .continue-card.hovered{  }
 }
 
 @media (max-width: 900px){
-  .continue-card{ width: 320px; flex: 0 0 320px; }
-  .continue-backdrop{ min-height: 140px; }
+  .continue-card{ width: 232.962px; flex: 0 0 232.962px; height: 131.163px; }
+  .continue-backdrop{ height: 100%; }
   .continue-card.hovered{ transform: translateY(-10px) scale(1.08); z-index: 80; }
 }
 
-@media (max-width: 900px){
-  .continue-card{ width: 320px; flex: 0 0 320px; }
-  .continue-backdrop{ height: 140px; }
-}
 
 /* Focus lift for keyboard users inside continue rows */
 .continue-scroll .continue-card:focus-visible{ transform: translateY(-4px) scale(1.01); box-shadow: 0 12px 30px rgba(229,9,20,0.08); }
@@ -672,6 +668,29 @@ button:active, .button:active, .btn:active, .menu-link:active, .profile-btn:acti
   animation: netflix-caret-pulse 1.6s infinite ease-in-out;
 }
 
+/* Header inline search input (expands on click) */
+.header-search-input{
+  width: 0;
+  min-width: 40px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  transition: width 200ms ease, opacity 160ms ease, margin 160ms ease;
+  opacity: 0;
+  border: none;
+  background: transparent;
+  color: #fff;
+}
+.header-search-input.open{
+  width: 260px; /* slightly wider but not too wide */
+  opacity: 1;
+  margin-right: 8px;
+  background: #000; /* black background as requested */
+  border: 1px solid #fff; /* white border */
+  color: #fff; /* white input text */
+}
+.header-search-input::placeholder{ color: rgba(255,255,255,0.9); }
+.header-search-input:focus{ outline: none; box-shadow: none; }
+
 /* If not focused, keep the caret default/invisible and no highlight */
 .search-input:not(:focus){ animation: none; box-shadow: none; }
 
@@ -771,6 +790,66 @@ select.search-input, select.input{ min-width: 64px }
 
 /* profile and hamburger buttons in header */
 .profile-btn, .hamburger{ background:transparent; border:none; color:var(--muted); cursor:pointer; padding:6px; border-radius:6px }
+.search-btn { background: transparent; border: none; padding:6px; }
+
+/* Remove visual borders and hover backgrounds specifically for header icon buttons */
+.search-btn.button.ghost, .profile-btn.button.ghost {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.preview-modal-overlay{ pointer-events: auto; opacity: 0; transition: opacity 220ms cubic-bezier(.2,.9,.2,1); }
+.preview-modal-overlay.show{ opacity: 1; }
+/* overlay positioned via inline styles; the modal element is centered at overlay origin */
+.preview-modal{
+  background: rgba(0,0,0,0.96);
+  position: absolute; left: 0; top: 0;
+  transform: translate(-50%, -50%) scale(1);
+  transform-origin: center center;
+  width: var(--init-w,232.962px);
+  height: var(--init-h,131.163px);
+  border-radius:10px; overflow:hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+  display:flex; flex-direction:column;
+  transition: width 220ms cubic-bezier(.2,.9,.2,1), height 220ms cubic-bezier(.2,.9,.2,1), transform 220ms cubic-bezier(.2,.9,.2,1);
+}
+.preview-modal-overlay.show .preview-modal{ width: var(--target-w,360px); height: var(--target-h,280px); }
+
+/* Force overlay above all app content (including transformed stacking contexts) */
+.preview-modal-overlay{ z-index: 2147483647 !important; }
+.preview-open .continue-row, .preview-open .continue-scroll-wrapper, .preview-open .continue-scroll { overflow: visible !important; }
+.preview-open .continue-row { z-index: 10; }
+.preview-open .continue-card { z-index: 5; }
+.preview-backdrop{ flex:0 0 60%; background-size:cover; background-position:center; position:relative }
+.preview-iframe{ position:absolute; inset:0; width:100%; height:100%; border:0 }
+.preview-info{ flex:1 1 auto; padding:10px 12px; display:flex; flex-direction:column; justify-content:center; gap:6px }
+.preview-actions{ display:flex; gap:8px; align-items:center }
+.preview-btn{ display:inline-flex; align-items:center; gap:8px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.06); color:#fff; padding:6px 10px; border-radius:6px; cursor:pointer }
+.preview-btn.play{ background:#fff; color:#000; font-weight:600 }
+.preview-metadata{ display:flex; gap:8px; color:var(--muted); font-size:12px }
+.preview-title{ color:#fff; font-weight:700; font-size:14px }
+
+/* Disable visual transforms on the card itself — modal opens above the card instead */
+.continue-row .continue-card:hover, .continue-row .continue-card:focus {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+
+.search-btn img, .profile-btn img, .search-btn svg {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  display: block;
+}
+.search-btn:hover, .profile-btn:hover {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.search-btn:focus-visible, .profile-btn:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
 .hamburger{ font-size:20px; color:#fff }
 
 /* mobile menu overlay surface */
@@ -790,10 +869,10 @@ select.search-input, select.input{ min-width: 64px }
 @media (min-width: 768px) {
   /* Normalize tab sizes and alignment so every nav item is the same height */
   .app-header [role="tab"]{
-    color: #fff;
-    /* increase nav label size to match row titles / continue title */
-    font-size: 24px;
-    font-weight: 700;
+    /* Inactive tab color: grayish/muted */
+    color: var(--muted);
+    font-size: 16px;
+    font-weight: 600;
     /* top:10px, right/left:8px, bottom:0 */
     padding: 10px 8px 0 !important;
   }
@@ -805,7 +884,8 @@ select.search-input, select.input{ min-width: 64px }
     padding-top: 10px !important;
     padding-bottom: 0 !important;
   }
-  .app-header [role="tab"][aria-selected="true"]{ background: rgba(255,255,255,0.04); color: #fff; }
+  /* Active tab indicator is the font color (white); remove background highlight */
+  .app-header [role="tab"][aria-selected="true"]{ color: #fff; background: transparent; }
 }
 
 /* Custom scrollbars — consistent, Netflix-red accent */

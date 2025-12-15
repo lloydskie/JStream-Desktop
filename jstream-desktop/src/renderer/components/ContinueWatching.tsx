@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { fetchTMDB } from '../../utils/tmdbClient';
 
 export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:number|string, type?:'movie'|'tv')=>void, onSelect?: (id:number|string, type?:'movie'|'tv')=>void }) {
@@ -12,6 +13,21 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
   const [hoverTrailerKey, setHoverTrailerKey] = useState<string | null>(null);
   const [hoverLoading, setHoverLoading] = useState(false);
   const hoverTokenRef = useRef<number>(0);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewModalPos, setPreviewModalPos] = useState<{left:number,top:number}|null>(null);
+  const previewTimeoutRef = useRef<number | null>(null);
+  const [previewAnimating, setPreviewAnimating] = useState(false);
+  const [lastCardRect, setLastCardRect] = useState<DOMRect | null>(null);
+
+  // add/remove a body class to avoid clipping by making surrounding rows overflow visible
+  useEffect(() => {
+    if (showPreviewModal) {
+      document.body.classList.add('preview-open');
+    } else {
+      document.body.classList.remove('preview-open');
+    }
+    return () => { document.body.classList.remove('preview-open'); };
+  }, [showPreviewModal]);
 
   useEffect(() => {
     let mounted = true;
@@ -289,26 +305,40 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
         </button>
         <div className="continue-scroll" role="list" ref={scrollerRef}>
         {items.map((it:any, idx:number) => (
-          <div key={`${it.type}-${it.id}`} className={`continue-card ${hoverIndex===idx? 'hovered':''}`} role="listitem" onClick={() => onPlay ? onPlay(it.id, it.type) : (onSelect && onSelect(it.id, it.type))} tabIndex={0} onFocus={() => setFocusedIndex(idx)}
-            onMouseEnter={async () => {
+          <div key={`${it.type}-${it.id}`} className={`continue-card`} role="listitem" onClick={() => onPlay ? onPlay(it.id, it.type) : (onSelect && onSelect(it.id, it.type))} tabIndex={0} onFocus={() => setFocusedIndex(idx)}
+            onMouseEnter={async (e) => {
+              // clear any pending hide timers
+              if (previewTimeoutRef.current) { window.clearTimeout(previewTimeoutRef.current); previewTimeoutRef.current = null; }
               const token = ++hoverTokenRef.current;
               try {
                 setHoverIndex(idx);
                 setHoverLoading(true);
-                // pause global hero trailer while preview plays
+                // compute modal position (fixed) above the card if possible
+                try {
+                  const el = e.currentTarget as HTMLElement;
+                  const rect = el.getBoundingClientRect();
+                  setLastCardRect(rect);
+                  // compute center point of the card in viewport coords
+                  const centerX = rect.left + rect.width / 2;
+                  const centerY = rect.top + rect.height / 2;
+                  setPreviewModalPos({ left: centerX, top: centerY });
+                  // show modal and start enter animation next frame
+                  setShowPreviewModal(true);
+                  requestAnimationFrame(() => requestAnimationFrame(() => setPreviewAnimating(true)));
+                } catch (e) {
+                  // ignore
+                }
+                // pause global hero trailer while preview opens
                 try {
                   const ctrl = (window as any).__appTrailerController;
                   if (ctrl && typeof ctrl.pause === 'function') ctrl.pause();
                   else window.dispatchEvent(new CustomEvent('app:pause-hero-trailer'));
-                } catch (e) {
-                  window.dispatchEvent(new CustomEvent('app:pause-hero-trailer'));
-                }
+                } catch (e) { window.dispatchEvent(new CustomEvent('app:pause-hero-trailer')); }
+
                 // fetch videos for this item
                 const typePath = it.type || 'movie';
                 const data = await fetchTMDB(`${typePath}/${it.id}/videos`, { language: 'en-US' });
-                // ensure still hovering the same index
                 if (token !== hoverTokenRef.current) {
-                  // user moved away before fetch completed
                   setHoverLoading(false);
                   return;
                 }
@@ -335,18 +365,20 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
               }
             }}
             onMouseLeave={() => {
-              // invalidate any pending fetch
-              hoverTokenRef.current++;
-              setHoverIndex(null);
-              setHoverTrailerKey(null);
-                // resume hero trailer when preview stops
-              try {
-                const ctrl = (window as any).__appTrailerController;
-                if (ctrl && typeof ctrl.resume === 'function') ctrl.resume();
-                else window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
-              } catch (e) {
-                window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
-              }
+              // start close animation and hide modal after delay to allow entering modal
+              setPreviewAnimating(false);
+              previewTimeoutRef.current = window.setTimeout(() => {
+                hoverTokenRef.current++;
+                setHoverIndex(null);
+                setHoverTrailerKey(null);
+                setShowPreviewModal(false);
+                // resume hero trailer
+                try {
+                  const ctrl = (window as any).__appTrailerController;
+                  if (ctrl && typeof ctrl.resume === 'function') ctrl.resume();
+                  else window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
+                } catch (e) { window.dispatchEvent(new CustomEvent('app:resume-hero-trailer')); }
+              }, 220);
             }}
           >
             {it.backdrop ? (
@@ -356,19 +388,7 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
                 ) : (
                   <div className="continue-logo-text">{it.data?.title || it.data?.name}</div>
                 )}
-                {/* Trailer overlay (muted, autoplay) */}
-                {hoverIndex === idx && hoverTrailerKey ? (
-                  <div className={`continue-trailer-overlay ${hoverTrailerKey ? 'show' : ''}`} aria-hidden={hoverTrailerKey ? 'false' : 'true'}>
-                    <iframe
-                      src={`https://www.youtube.com/embed/${hoverTrailerKey}?rel=0&autoplay=1&mute=0&controls=0&playsinline=1&modestbranding=1&loop=1&playlist=${hoverTrailerKey}&enablejsapi=1`}
-                      title="Preview"
-                      frameBorder="0"
-                      allow="autoplay; encrypted-media"
-                      allowFullScreen
-                      loading="lazy"
-                    />
-                  </div>
-                ) : null}
+                {/* Trailer overlay moved into modal; card itself no longer shows inline trailer */}
               </div>
             ) : (
               <div className="continue-backdrop placeholder">
@@ -378,6 +398,66 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
           </div>
         ))}
         </div>
+        {/* Render modal via portal so it's fixed to the viewport and not affected by ancestor transforms */}
+        {showPreviewModal && previewModalPos && hoverIndex !== null && items[hoverIndex] ? createPortal(
+          <div
+            className={`preview-modal-overlay ${previewAnimating ? 'show' : ''}`}
+            style={{ position: 'fixed', left: previewModalPos.left, top: previewModalPos.top, zIndex: 2147483647, // set CSS vars for animation start/target
+              ['--init-w' as any]: lastCardRect ? `${lastCardRect.width}px` : '232.962px',
+              ['--init-h' as any]: lastCardRect ? `${lastCardRect.height}px` : '131.163px',
+              ['--target-w' as any]: '360px',
+              ['--target-h' as any]: '280px'
+            }}
+            onMouseEnter={() => { if (previewTimeoutRef.current) { window.clearTimeout(previewTimeoutRef.current); previewTimeoutRef.current = null; } setPreviewAnimating(true); }}
+            onMouseLeave={() => {
+              setPreviewAnimating(false);
+              previewTimeoutRef.current = window.setTimeout(() => {
+                setShowPreviewModal(false);
+                setHoverIndex(null);
+                setHoverTrailerKey(null);
+              }, 220);
+            }}
+          >
+            <div className="preview-modal" role="dialog" aria-hidden={!previewAnimating}>
+              <div className="preview-backdrop" style={{ backgroundImage: `url(https://image.tmdb.org/t/p/original${items[hoverIndex].backdrop})` }}>
+                {hoverTrailerKey ? (
+                  <iframe className="preview-iframe" src={`https://www.youtube.com/embed/${hoverTrailerKey}?rel=0&autoplay=1&mute=1&controls=0&playsinline=1&modestbranding=1`} title="Preview" frameBorder="0" allow="autoplay; encrypted-media" />
+                ) : null}
+              </div>
+              <div className="preview-info">
+                <div className="preview-actions">
+                  <button className="preview-btn play" aria-label="Play">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 3v18l15-9L5 3z" fill="currentColor"/></svg>
+                    <span>Play</span>
+                  </button>
+                  <button className="preview-btn" aria-label="Add to list">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </button>
+                  <button className="preview-btn" aria-label="Favorite">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78z" stroke="currentColor" strokeWidth="0" fill="currentColor"/></svg>
+                  </button>
+                  <button className="preview-btn" aria-label="More info">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/><path d="M12 16v-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M12 8h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </button>
+                </div>
+                <div className="preview-metadata">
+                  <span className="cert">{items[hoverIndex].data?.adult ? '18+' : (items[hoverIndex].data?.certification || '')}</span>
+                  <span className="duration">{(items[hoverIndex].data?.runtime || (items[hoverIndex].data?.episode_run_time && items[hoverIndex].data?.episode_run_time[0])) ? `${items[hoverIndex].data?.runtime || items[hoverIndex].data?.episode_run_time[0]}m` : ''}</span>
+                  <span className="rating">{items[hoverIndex].data?.vote_average ? `${items[hoverIndex].data.vote_average.toFixed(1)}/10` : ''}</span>
+                </div>
+                <div className="preview-title">
+                  {items[hoverIndex].type === 'tv' ? `S1:E1 ${items[hoverIndex].data?.name || items[hoverIndex].data?.title}` : (items[hoverIndex].data?.title || items[hoverIndex].data?.name)}
+                </div>
+              </div>
+            </div>
+          </div>, document.body) : null}
+
+        {/* Dev debug overlay: show card rect and modal rect when enabled */}
+        { (window as any).__DEV_PREVIEW_DEBUG && lastCardRect && previewModalPos ? createPortal(
+          <div aria-hidden style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none', width: '100%', height: '100%', zIndex: 2147483646 }}>
+            <div style={{ position: 'absolute', left: lastCardRect.left + window.scrollX, top: lastCardRect.top + window.scrollY, width: lastCardRect.width, height: lastCardRect.height, border: '2px solid rgba(0,128,255,0.9)', boxSizing: 'border-box' }} />
+            <div style={{ position: 'absolute', left: previewModalPos.left - 180, top: previewModalPos.top - 110, width: 360, height: 220, border: '2px dashed rgba(255,0,0,0.9)', boxSizing: 'border-box' }} />
+          </div>, document.body) : null }
         <button disabled={!canScrollRight} className={`continue-scroll-button right ${!canScrollRight ? 'disabled' : ''}`} onClick={() => {
           const el = scrollerRef.current;
           if (!el) return;
