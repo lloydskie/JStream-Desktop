@@ -12,6 +12,7 @@ export default function HomeGrid({ onSelectMovie, onPlayMovie, selectedTmdbId, s
   const [topRated, setTopRated] = useState<any[]>([]);
   const [top10, setTop10] = useState<any[]>([]);
   const [becauseYouWatched, setBecauseYouWatched] = useState<any[]>([]);
+  const [lastSelectedTitle, setLastSelectedTitle] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -130,15 +131,49 @@ export default function HomeGrid({ onSelectMovie, onPlayMovie, selectedTmdbId, s
     })();
   }, [selectedGenre]);
 
+  // Resolve the last selected movie/tv title for the "Because you watched" header
+  useEffect(() => {
+    (async () => {
+      try {
+        const last = await (window as any).database.getPersonalization('last_selected_movie');
+        if (!last) {
+          setLastSelectedTitle(null);
+          return;
+        }
+
+        // Try movie first, then fallback to tv
+        try {
+          const m = await fetchTMDB(`movie/${last}`);
+          if (m && (m.title || m.name)) {
+            setLastSelectedTitle(m.title || m.name || null);
+            return;
+          }
+        } catch (e) { /* ignore */ }
+
+        try {
+          const t = await fetchTMDB(`tv/${last}`);
+          if (t && (t.name || t.title)) {
+            setLastSelectedTitle(t.name || t.title || null);
+            return;
+          }
+        } catch (e) { /* ignore */ }
+
+        setLastSelectedTitle(null);
+      } catch (e) {
+        setLastSelectedTitle(null);
+      }
+    })();
+  }, []);
+
   return (
     <>
       <div className="app-shell">
         {loading && <Spinner />}
 
         <Row title="Top 10" movies={top10} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />
-        <Row title="Popular on JStream" movies={popular} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />
-        {becauseYouWatched.length > 0 && <Row title="Because you watched" movies={becauseYouWatched} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />}
-        <Row title="Top Rated" movies={topRated} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />
+        <Row title="Popular on JStream" movies={popular} backdropMode={true} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />
+        {becauseYouWatched.length > 0 && <Row title={lastSelectedTitle ? `Because you watched ${lastSelectedTitle}` : 'Because you watched'} movies={becauseYouWatched} backdropMode={true} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />}
+        <Row title="Top Rated" movies={topRated} backdropMode={true} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />
 
         <div className="bottom-nav">
           <button>Home</button>

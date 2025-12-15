@@ -435,7 +435,7 @@ export default function DetailsPage({ tmdbId, itemTypeHint, onPlay, onSelect, on
               {onPlay && itemType === 'tv' && (
                 <Button onClick={(e) => { e.stopPropagation(); onPlay(tmdbId, 'tv', { tmdbId, season: 1, episode: 1 }); }} className="button primary">Play</Button>
               )}
-              <Button aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'} onClick={(e) => { e.stopPropagation(); toggleFavorite(); }} variant="ghost" style={{ padding: 6 }} title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}>
+              <Button aria-label={isFavorite ? 'Remove from my list' : 'Add to my list'} onClick={(e) => { e.stopPropagation(); toggleFavorite(); }} variant="ghost" style={{ padding: 6 }} title={isFavorite ? 'Remove from my list' : 'Add to my list'}>
                 <PlusMinusIcon isMinus={isFavorite} size={18} color={isFavorite ? '#D81F26' : 'var(--muted)'} />
               </Button>
               {item && item.belongs_to_collection && onGoToCollections && (

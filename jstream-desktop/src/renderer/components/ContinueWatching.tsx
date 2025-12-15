@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { fetchTMDB } from '../../utils/tmdbClient';
+import RowScroller from './RowScroller';
 
 export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:number|string, type?:'movie'|'tv')=>void, onSelect?: (id:number|string, type?:'movie'|'tv')=>void }) {
   const [items, setItems] = useState<any[]>([]);
@@ -8,6 +9,8 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
   const [debugRaw, setDebugRaw] = useState<any>(null);
   const [debugNormalized, setDebugNormalized] = useState<any>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const [pagerIndex, setPagerIndex] = useState(0);
+  const [pagerCount, setPagerCount] = useState(0);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [hoverTrailerKey, setHoverTrailerKey] = useState<string | null>(null);
@@ -207,53 +210,48 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
     if (child) child.scrollIntoView({ behavior: 'smooth', inline: 'center' });
   }
 
-  // Track scroller ends so we can optionally disable buttons in the future
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
+  // scroller behavior is handled by RowScroller (carousel) below
+
+  // Infinite wrap logic: keep the viewport in the middle copy and wrap when reaching edges
   React.useEffect(() => {
     const el = scrollerRef.current;
-    if (!el) return;
+    if (!el || items.length === 0) return;
+    const copies = 3;
     const update = () => {
-      setCanScrollLeft(el.scrollLeft > 8);
-      setCanScrollRight(el.scrollWidth - el.clientWidth - el.scrollLeft > 8);
-    };
-    update();
-    el.addEventListener('scroll', update, { passive: true });
-    window.addEventListener('resize', update);
-    return () => { try { el.removeEventListener('scroll', update); } catch (e) {} window.removeEventListener('resize', update); };
-  }, [scrollerRef.current, items.length]);
-
-  function handleWheel(e: React.WheelEvent) {
-    const container = scrollerRef.current;
-    if (!container) return;
-    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-      container.scrollBy({ left: e.deltaY, behavior: 'auto' });
-      e.preventDefault();
-      e.stopPropagation();
-    }
-  }
-
-  // Attach a native non-passive wheel listener so we can call preventDefault()
-  // and stop the page from scrolling while converting vertical wheel to horizontal scroll.
-  React.useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    const onWheel = (ev: WheelEvent) => {
-      try {
-        // Only convert primarily-vertical scrolls
-        if (Math.abs(ev.deltaY) > Math.abs(ev.deltaX)) {
-          el.scrollBy({ left: ev.deltaY, behavior: 'auto' });
-          ev.preventDefault();
-        }
-      } catch (e) {
-        // ignore
+      // measure first child width and gap
+      const first = el.querySelector(':scope > *') as HTMLElement | null;
+      const gap = parseFloat(getComputedStyle(el).gap || '0') || 0;
+      const childW = first ? first.getBoundingClientRect().width : 220;
+      const singleSetWidth = (childW + gap) * items.length;
+      // ensure we're centered in the middle copy when items first load
+      if (el.scrollLeft < singleSetWidth * 0.9 || el.scrollLeft > singleSetWidth * 1.1) {
+        try { el.scrollLeft = singleSetWidth; } catch (e) {}
       }
     };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => {
-      try { el.removeEventListener('wheel', onWheel); } catch (e) {}
+    // initialize after a frame
+    requestAnimationFrame(update);
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const first = el.querySelector(':scope > *') as HTMLElement | null;
+        const gap = parseFloat(getComputedStyle(el).gap || '0') || 0;
+        const childW = first ? first.getBoundingClientRect().width : 220;
+        const singleSetWidth = (childW + gap) * items.length;
+        if (el.scrollLeft <= singleSetWidth * 0.2) {
+          // jumped too far to the left — move right by one set
+          el.scrollLeft = el.scrollLeft + singleSetWidth;
+        } else if (el.scrollLeft >= singleSetWidth * (copies - 0.2)) {
+          // jumped too far to the right — move left by one set
+          el.scrollLeft = el.scrollLeft - singleSetWidth;
+        }
+        ticking = false;
+      });
     };
-  }, []);
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => { try { el.removeEventListener('scroll', onScroll); } catch (e) {} };
+  }, [items.length]);
 
     // Expose a small debug control when a dev flag is set so we can inspect
   // the raw recent data in the running app without modifying the DB.
@@ -291,27 +289,40 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
 
   return (
     <section className="continue-row">
-      <h2 className="continue-title">Continue Watching</h2>
-      <div className="continue-scroll-wrapper">
-        <button disabled={!canScrollLeft} className={`continue-scroll-button left ${!canScrollLeft ? 'disabled' : ''}`} onClick={() => {
-          const el = scrollerRef.current;
-          if (!el) return;
-          const amt = Math.max(el.clientWidth * 0.8, 320);
-          el.scrollBy({ left: -amt, behavior: 'smooth' });
-        }} aria-label="Scroll left">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
-        <div className="continue-scroll" role="list" ref={scrollerRef}>
-        {items.map((it:any, idx:number) => (
-          <div key={`${it.type}-${it.id}`} className={`continue-card`} role="listitem" onClick={() => onPlay ? onPlay(it.id, it.type) : (onSelect && onSelect(it.id, it.type))} tabIndex={0} onFocus={() => setFocusedIndex(idx)}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h2 className="continue-title">Continue Watching</h2>
+        <div style={{ marginLeft: 'auto' }}>
+          <div className="row-page-indicator-inline" aria-hidden>
+            <div className="bar-list">
+              {Array.from({ length: pagerCount }).map((_, i) => (
+                <svg key={i} className={`bar ${i === pagerIndex ? 'active' : ''}`} width="28" height="6" viewBox="0 0 28 6" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                  <rect width="28" height="6" rx="0" fill="currentColor" />
+                </svg>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+      <RowScroller scrollerRef={scrollerRef} className="continue-scroll" showPager={false} disableWheel={true} itemCount={items.length} itemsPerPage={5} onPageChange={(idx, count) => { setPagerIndex(idx); setPagerCount(count); }}>
+        {/** Render repeated copies so the scroll appears infinite — we start in the middle copy and wrap on scroll */}
+        {(() => {
+          const copies = 3; // number of repeated sets
+          const out: any[] = [];
+          for (let c = 0; c < copies; c++) {
+            for (let i = 0; i < items.length; i++) {
+              const it = items[i];
+              const key = `${it.type}-${it.id}-copy-${c}-idx-${i}`;
+              out.push({ it, key, idx: i });
+            }
+          }
+          return out.map((entry, renderedIndex) => (
+            <div key={entry.key} className={`continue-card`} role="listitem" onClick={() => onPlay ? onPlay(entry.it.id, entry.it.type) : (onSelect && onSelect(entry.it.id, entry.it.type))} tabIndex={0} onFocus={() => setFocusedIndex(entry.idx)}
             onMouseEnter={async (e) => {
               // clear any pending hide timers
               if (previewTimeoutRef.current) { window.clearTimeout(previewTimeoutRef.current); previewTimeoutRef.current = null; }
               const token = ++hoverTokenRef.current;
               try {
-                setHoverIndex(idx);
+                setHoverIndex(entry.idx);
                 setHoverLoading(true);
                 // compute modal position (fixed) above the card if possible
                 try {
@@ -351,8 +362,8 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
                 } catch (e) { window.dispatchEvent(new CustomEvent('app:pause-hero-trailer')); }
 
                 // fetch videos for this item
-                const typePath = it.type || 'movie';
-                const data = await fetchTMDB(`${typePath}/${it.id}/videos`, { language: 'en-US' });
+                const typePath = entry.it.type || 'movie';
+                const data = await fetchTMDB(`${typePath}/${entry.it.id}/videos`, { language: 'en-US' });
                 if (token !== hoverTokenRef.current) {
                   setHoverLoading(false);
                   return;
@@ -396,24 +407,26 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
               }, 220);
             }}
           >
-            {it.backdrop ? (
-              <div className="continue-backdrop" style={{ backgroundImage: `url(https://image.tmdb.org/t/p/original${it.backdrop})` }}>
-                {it.logoPath ? (
-                  <img src={`https://image.tmdb.org/t/p/w300${it.logoPath}`} alt={it.data?.title || it.data?.name} className="continue-logo"/>
+            {entry.it.backdrop ? (
+              <div className="continue-backdrop" style={{ backgroundImage: `url(https://image.tmdb.org/t/p/original${entry.it.backdrop})` }}>
+                {entry.it.logoPath ? (
+                  <img src={`https://image.tmdb.org/t/p/w300${entry.it.logoPath}`} alt={entry.it.data?.title || entry.it.data?.name} className="continue-logo"/>
                 ) : (
-                  <div className="continue-logo-text">{it.data?.title || it.data?.name}</div>
+                  <div className="continue-logo-text">{entry.it.data?.title || entry.it.data?.name}</div>
                 )}
                 {/* Trailer overlay moved into modal; card itself no longer shows inline trailer */}
               </div>
             ) : (
               <div className="continue-backdrop placeholder">
-                <div className="continue-logo-text">{it.data?.title || it.data?.name}</div>
+                <div className="continue-logo-text">{entry.it.data?.title || entry.it.data?.name}</div>
               </div>
             )}
           </div>
-        ))}
-        </div>
-        {/* Render modal via portal so it's fixed to the viewport and not affected by ancestor transforms */}
+          ));
+        })()}
+      </RowScroller>
+      {/* Infinite wrap logic is handled in a hook before return */}
+      {/* Render modal via portal so it's fixed to the viewport and not affected by ancestor transforms */}
         {showPreviewModal && previewModalPos && hoverIndex !== null && items[hoverIndex] ? createPortal(
           <div
             className={`preview-modal-overlay ${previewAnimating ? 'show' : ''}`}
@@ -496,24 +509,6 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
                     }}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     </button>
-                    <button className="preview-btn" aria-label="Favorite" onClick={async (ev) => {
-                      ev.stopPropagation();
-                      const it = items[hoverIndex];
-                      try {
-                        const db = (window as any).database;
-                        if (db && typeof db.favoritesToggle === 'function') {
-                          await db.favoritesToggle(String(it.id), it.type || 'movie');
-                          console.debug('ContinueWatching: toggled favorite', it.id);
-                        } else if (db && typeof db.favoritesAdd === 'function') {
-                          await db.favoritesAdd(String(it.id), it.type || 'movie');
-                          console.debug('ContinueWatching: added to favorites (fallback)', it.id);
-                        } else {
-                          console.debug('ContinueWatching: no favorites API available');
-                        }
-                      } catch (e) { console.error('ContinueWatching: favorite action failed', e); }
-                    }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78z" stroke="currentColor" strokeWidth="0" fill="currentColor"/></svg>
-                    </button>
                   </div>
                   <div className="preview-actions-right">
                     <button className="preview-btn" aria-label="More info" onClick={(ev) => {
@@ -549,17 +544,6 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
             <div style={{ position: 'absolute', left: lastCardRect.left + window.scrollX, top: lastCardRect.top + window.scrollY, width: lastCardRect.width, height: lastCardRect.height, border: '2px solid rgba(0,128,255,0.9)', boxSizing: 'border-box' }} />
             <div style={{ position: 'absolute', left: previewModalPos.left - 180, top: previewModalPos.top - 110, width: 360, height: 220, border: '2px dashed rgba(255,0,0,0.9)', boxSizing: 'border-box' }} />
           </div>, document.body) : null }
-        <button disabled={!canScrollRight} className={`continue-scroll-button right ${!canScrollRight ? 'disabled' : ''}`} onClick={() => {
-          const el = scrollerRef.current;
-          if (!el) return;
-          const amt = Math.max(el.clientWidth * 0.8, 320);
-          el.scrollBy({ left: amt, behavior: 'smooth' });
-        }} aria-label="Scroll right">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <path d="M9 6L15 12L9 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
-      </div>
     </section>
   );
 }

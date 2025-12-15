@@ -12,6 +12,8 @@
   --poster-small: 180px;
   --poster-medium: 220px;
   --poster-large: 300px;
+  --card-extra-height: 64px; /* approximate movie-info + padding height to match full card */
+  --movie-card-width: 200px; /* default card width used in rows, override if row sizing changes */
 }
 
 /* Ensure the portal header root is fixed to the top so the navbar stays at the top of the viewport */
@@ -30,8 +32,8 @@
   position: relative;
   z-index: 999; /* below root, above default */
   /* keep hero below header */
-  pointer-events: none;
-  width: 100%;
+  /* Size the number to 50% of the poster height */
+  font-size: calc(var(--poster-medium) * 0.5);
 }
 #hero-root::after{
   content: "";
@@ -173,13 +175,16 @@ body{
   border-radius:8px;
   overflow:hidden;
   transition: transform 180ms ease, box-shadow 180ms ease;
+  /* allow a horizontal shift when Top10 ranks overlap the card */
+  transform: translateX(var(--card-shift, 0));
   cursor:pointer;
   box-shadow: 0 2px 8px rgba(0,0,0,0.6);
   border: 1px solid rgba(255,255,255,0.03);
   display:flex;
   flex-direction:column;
+  position: relative; /* allow absolutely positioned rank badge */
 }
-.movie-card:hover{ transform: translateY(-6px) scale(1.02); box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
+.movie-card:hover{ transform: translateX(var(--card-shift, 0)) translateY(-6px) scale(1.02); box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
 
 /* Accent hover / focus effects using Netflix red */
 .movie-card{
@@ -187,7 +192,7 @@ body{
   border: 1px solid rgba(255,255,255,0.03);
 }
 .movie-card:hover, .movie-card:focus {
-  transform: translateY(-6px) scale(1.02);
+  transform: translateX(var(--card-shift, 0)) translateY(-6px) scale(1.02);
   box-shadow: 0 18px 40px rgba(229,9,20,0.12);
   border-color: rgba(229,9,20,0.18);
 }
@@ -205,7 +210,7 @@ body{
 .app-header [role="tab"]:focus-visible{ box-shadow: 0 6px 18px rgba(229,9,20,0.08); outline: none; border-radius:8px; }
 
 /* Small visual lift for focused items in rows for keyboard users */
-.row-scroll .movie-card:focus-visible{ transform: translateY(-4px) scale(1.01); box-shadow: 0 12px 30px rgba(229,9,20,0.08); }
+.row-scroll .movie-card:focus-visible{ transform: translateX(var(--card-shift, 0)) translateY(-4px) scale(1.01); box-shadow: 0 12px 30px rgba(229,9,20,0.08); }
 
 .movie-poster{ width:100%; height:var(--poster-medium); display:block; object-fit:cover; background:#222 }
 .movie-info{ padding:12px; flex:1; display:flex; flex-direction:column; justify-content:space-between }
@@ -218,7 +223,7 @@ body{
 .card-actions{ display:flex; gap:8px; align-items:center; margin-top:10px }
 .play-cta{ background:var(--accent); color:#fff; border-radius:6px; padding:0 12px; font-weight:600; font-size:13px; display:inline-flex; align-items:center; gap:8px; height:44px }
 .play-cta .play-icon{ display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px }
-.fav-btn{ background:transparent; color:var(--muted); border:none; font-size:16px; padding:0 8px; height:44px; display:inline-flex; align-items:center }
+.add-btn{ background:transparent; color:var(--muted); border:none; font-size:16px; padding:0 8px; height:44px; display:inline-flex; align-items:center }
 .more-info-btn{
   background: rgba(255,255,255,0.06);
   color: #fff;
@@ -250,11 +255,67 @@ body{
 @media (min-width: 900px){ .movie-poster{ height:var(--poster-large) } }
 @media (min-width: 1200px){ .movie-poster{ height:var(--poster-large) } }
 
-.row-scroll{ display:flex; gap:8px; overflow:auto; padding:6px 6px 6px 6px }
-/* Carousel (row) specific sizing to keep cards uniform */
-.row-scroll .movie-card{ min-width:180px; max-width:200px; flex:0 0 200px }
+.row-scroll{ display:flex; gap:16px; overflow-x:auto; overflow-y:hidden; padding:6px 6px 6px 6px; align-items:flex-start }
+.row-scroll .movie-item{ min-width:180px; max-width:var(--movie-card-width); flex:0 0 var(--movie-card-width); overflow: visible; position: relative; }
+.row-scroll .movie-item .movie-card{ width:100%; }
 .row-scroll .movie-poster{ height:240px }
 .row-scroll .movie-info{ padding:10px }
+
+/* Rank number displayed behind poster for Top 10 rows */
+.row-scroll .movie-item .rank-back{
+  position: absolute;
+  right: 0; /* align the number to the right side of the item so it sits behind the poster */
+  left: auto;
+  /* make the badge match the poster height and center it vertically */
+  height: var(--poster-medium);
+  top: 50%;
+  /* position the rank to the left of the poster; negative offset moves it outward */
+  transform: translateX(calc(var(--poster-medium) * -0.2)) translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  pointer-events: none;
+  font-weight: 900;
+  z-index: 9999;
+  -webkit-font-smoothing: antialiased;
+  /* make the glyph transparent but outlined with a slightly lighter stroke; add dense text-shadow as fallback */
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  /* slightly lighter stroke for better contrast */
+  -webkit-text-stroke: 1px #ff0000;
+  /* dense multi-directional text-shadow fallback/outlines for non-webkit engines and extra contrast */
+  text-shadow:
+    -2px -2px 0 #2b2b2b,
+    2px -2px 0 #2b2b2b,
+    -2px 2px 0 #2b2b2b,
+    2px 2px 0 #2b2b2b,
+    -2px 0 0 #2b2b2b,
+    2px 0 0 #2b2b2b,
+    0 -2px 0 #2b2b2b,
+    0 2px 0 #2b2b2b,
+    /* subtle light inner highlight to separate from very dark posters */
+    0 0 2px rgba(255, 255, 255, 0.726);
+  /* Size the number to match the poster height exactly */
+  font-size: calc(var(--poster-medium));
+  line-height: 1;
+  padding-right: 8px;
+}
+/* Ensure poster and overlay sit above the rank number */
+.row-scroll .movie-item .movie-overlay{ position: relative; z-index: 1 }
+
+/* ensure the card sits below the rank so the outlined number is visible */
+.row-scroll .movie-item .movie-card{ position: relative; z-index: 1 }
+
+  .row-scroll .movie-item.small .rank-back{ font-size: calc(var(--poster-medium) * 0.5); height: calc(var(--poster-medium) * 0.5); top: 50%; transform: translateX(calc(var(--poster-medium) * -0.1)) translateY(-50%); }
+
+@media (max-width: 800px){
+  .row-scroll .movie-item .rank-back{ font-size: calc(var(--poster-medium) * 0.5); height: calc(var(--poster-medium) * 0.5); transform: translateX(calc(var(--poster-medium) * -0.1)) translateY(-50%); top:50%; }
+}
+
+@media (min-width: 900px){
+  .row-scroll .movie-item .rank-back{ font-size: calc(var(--poster-large) * 0.5); height: var(--poster-large); transform: translateX(calc(var(--poster-large) * -0.2)) translateY(-50%); top:50%; }
+  .row-scroll .movie-item.small .rank-back{ font-size: calc(var(--poster-large) * 0.5); height: calc(var(--poster-large) * 0.5); transform: translateX(calc(var(--poster-large) * -0.1)) translateY(-50%); top:50%; }
+}
 
 /* smaller card variant used in compact grids/rows */
 .movie-card.small{ min-width:150px; max-width:150px; margin-right:10px }
@@ -298,13 +359,149 @@ body{
 
 /* focused row for keyboard navigation */
 .focused-row{ outline: 2px solid rgba(229,9,20,0.15); box-shadow: 0 8px 30px rgba(229,9,20,0.08); transform: translateY(-4px) }
+/* include horizontal shift when item is focused */
+.focused-row{ transform: translateX(var(--card-shift, 0)) translateY(-4px) }
 
 /* carousel / row peek animation */
 .row-container{ margin-bottom:28px }
 .row-title{ font-size:24px; font-weight:700; margin:6px 8px }
 .row-scroll{ display:flex; gap:12px; overflow:auto; padding-bottom:6px }
-.row-scroll::-webkit-scrollbar{ height:16px }
-.row-scroll::-webkit-scrollbar-thumb{ background:rgba(255,255,255,0.06); border-radius:6px }
+
+/* Increase gap only for Top 10 rows so ranks have room */
+.row-container.top10 .row-scroll{ gap: calc(var(--movie-card-width) * 0.7); }
+
+/* Slightly reduce the gap on smaller screens so layout remains usable */
+@media (max-width: 900px){
+  .row-container.top10 .row-scroll{ gap: calc(var(--movie-card-width) * 0.8); }
+}
+
+/* Remove vertical scrollbar for Top10 row and align items to avoid accidental vertical overflow */
+.row-container.top10 .row-scroll{
+  overflow-x: auto;
+  overflow-y: hidden; /* explicitly hide vertical scrolling */
+  align-items: flex-start; /* ensure items align to top and don't stretch */
+}
+
+/* hide native scrollbars for Top10 rows */
+.row-container.top10 .row-scroll{
+  -ms-overflow-style: none; /* IE/Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.row-container.top10 .row-scroll::-webkit-scrollbar{ display:none; }
+
+/* Hide native scrollbars for Continue Watching carousel (we use the SVG pager) */
+.continue-scroll{
+  -ms-overflow-style: none; /* IE/Edge */
+  scrollbar-width: none; /* Firefox */
+  overflow-y: hidden; /* avoid vertical scrollbar */
+  align-items: flex-start;
+}
+.continue-scroll::-webkit-scrollbar{ display: none; }
+
+/* Page indicator (top-right) for rows that show pager */
+.row-page-indicator{
+  position: absolute;
+  right: 12px;
+  top: -8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  z-index: 2200;
+  pointer-events: none;
+}
+.row-page-indicator .page-count{ font-size:12px; color:var(--muted); }
+.row-page-indicator .dots{ display:flex; gap:6px; }
+.row-page-indicator .dot{ width:8px; height:8px; border-radius:999px; background: rgba(255,255,255,0.06); opacity:0.45; transition: transform 120ms ease, background 120ms ease, opacity 120ms ease; }
+.row-page-indicator .dot.active{ background: rgba(255,255,255,0.88); opacity:1; transform: translateY(-1px); }
+
+/* Inline page indicator placed opposite the row title */
+.row-page-indicator-inline{ display:flex; align-items:center; gap:8px }
+.row-page-indicator-inline .bar-list{ display:flex; gap:1px; align-items:center }
+.row-page-indicator-inline .bar{ color: rgba(255,255,255,0.06); opacity: 0.45; transition: color 160ms ease, opacity 160ms ease, transform 120ms ease; }
+.row-page-indicator-inline .bar.active{ color: rgba(255,255,255,0.88); opacity: 1; transform: translateY(-1px); }
+.row-page-indicator-inline .bar:not(.active){ filter: none; }
+
+/* ensure the scroller wrapper doesn't hide the pager */
+.row-scroll-wrapper .row-page-indicator{ display: block }
+
+/* Shift the card right inside the movie-item so the rank number remains visible with ~15% overlap */
+.row-container.top10 .movie-item .movie-card{ --card-shift: calc(var(--movie-card-width) * 0.55); }
+/* Top10: show posters only — hide titles/info and remove extra card footer height */
+.row-container.top10 {
+  --card-extra-height: 0; /* posters only — no extra info/footer space */
+}
+
+/* Make Top10 posters and card width slightly smaller so 5 items per page are comfortably visible */
+.row-container.top10{
+  --movie-card-width: 160px; /* reduce card width for Top10 rows */
+}
+/* compute poster height from card width to preserve aspect ratio (approx 2:3 -> height = width * 1.5) */
+.row-container.top10{ --top10-poster-height: calc(var(--movie-card-width) * 1.5); }
+.row-container.top10 .movie-poster{ height: var(--top10-poster-height); }
+
+/* adjust rank sizing to match the computed poster height and card width */
+.row-container.top10 .movie-item .rank-back{
+  height: var(--top10-poster-height);
+  font-size: calc(var(--top10-poster-height) * 0.5);
+  /* position the rank near the upper-left of the poster */
+  top: -25px;
+  transform: translateX(calc(var(--movie-card-width) * -0.30)) translateY(0);
+  align-items: flex-start;
+  padding-right: 20px;
+}
+.row-container.top10 .movie-info{ display: none !important; }
+.row-container.top10 .movie-title{ display: none !important; }
+
+/* Disable left-right movement and scaling on hover for Top10 cards */
+.row-container.top10 .movie-card,
+.row-container.top10 .movie-card:hover,
+.row-container.top10 .movie-card:focus,
+.row-container.top10 .movie-card:focus-visible {
+  /* Keep the horizontal shift constant but remove translateY/scale to avoid lateral movement */
+  transform: translateX(var(--card-shift, 0));
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+}
+
+/* Mini modal overlay shown on hover for Top10 items (similar to ContinueWatching) */
+.row-container.top10 .movie-item{ position: relative; }
+.row-container.top10 .top10-mini{
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  bottom: 8px;
+  display: flex;
+  gap: 8px;
+  background: rgba(0,0,0,0.6);
+  padding: 6px 8px;
+  border-radius: 8px;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 140ms ease;
+  z-index: 30;
+}
+.row-container.top10 .movie-item:hover .top10-mini,
+.row-container.top10 .movie-item:focus-within .top10-mini{
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+.top10-mini .mini-play, .top10-mini .mini-info{
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.06);
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Top10 uses the preview modal — hide the inline play overlay to avoid duplicate controls */
+.row-container.top10 .play-overlay { display: none !important; }
+.row-scroll{ -ms-overflow-style: none; scrollbar-width: none; }
+.row-scroll::-webkit-scrollbar{ display: none; }
 
 /* ensure scroll is captured by the scroller under the pointer instead of bubbling to the page */
 .row-scroll, .movie-grid, .detail-sections, .search-dropdown{ overscroll-behavior: contain; }
@@ -344,8 +541,9 @@ body{
   .hero-trailer iframe{ object-position: center top; }
 }
 .hero-trailer-fallback{ margin-top:8px; background: rgba(0,0,0,0.5); color: #fff; padding:6px 8px; border-radius:6px; font-size:13px; display:inline-block }
-.hero-title{ font-size:40px; font-weight:800; margin:0 0 12px 0 }
-.hero-overview{ color: #e6e6e6; max-height:72px; overflow:hidden; margin-bottom:16px }
+.hero-title{ font-size:32px; font-weight:800; margin:0 0 12px 0 }
+/* Hero overview paragraph: ensure readable size and comfortable line-height */
+.hero-overview{ color: #e6e6e6; max-height:72px; overflow:hidden; margin-bottom:16px; font-size:16px; line-height:1.45 }
 .hero-actions{ display:flex; gap:12px; align-items:center; height:44px }
 
 /* Center hero content for the full-bleed homepage hero and nudge it toward the lower-middle */
@@ -381,7 +579,7 @@ body{
 .hero-logo.logo-lower{ transform: translateY(-10%); }
 
 /* Overview expand/collapse animations */
-.hero-overview{ color: #e6e6e6; overflow:hidden; transition: max-height 360ms ease, opacity 360ms ease, transform 360ms ease; max-height:120px; transform: translateY(0); opacity:1 }
+.hero-overview{ color: #e6e6e6; overflow:hidden; transition: max-height 360ms ease, opacity 360ms ease, transform 360ms ease; max-height:120px; transform: translateY(0); opacity:1; font-size:16px; line-height:1.45 }
 .hero-overview.collapsed{ max-height:0; opacity:0; transform: translateY(-6px); }
 .hero-overview.expanded{ max-height:420px; opacity:1; transform: translateY(0); }
 
@@ -431,6 +629,8 @@ body{
 @media (max-width: 900px) {
   /* On smaller screens keep overlays reasonably sized but still flush to edge */
   .continue-scroll-button{ width:64px }
+  .hero-overview{ font-size:14px; line-height:1.4 }
+  .hero-title{ font-size:28px }
   .continue-scroll-button svg{ width:24px; height:24px }
 }
 
@@ -485,7 +685,7 @@ body{
 /* Larger hover expansion on wide screens: increase flex-basis more */
 @media (min-width: 1200px) {
   .continue-card{ width: 232.962px; flex: 0 0 232.962px; height: 131.163px; }
-  .continue-card.hovered{  }
+  
 }
 
 @media (max-width: 900px){
@@ -907,10 +1107,10 @@ select.search-input, select.input{ min-width: 64px }
 *::-webkit-scrollbar-thumb{ background: linear-gradient(180deg, var(--accent), #b30a12); border-radius:999px; border:2px solid rgba(0,0,0,0.6); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03); }
 *::-webkit-scrollbar-thumb:hover{ filter:brightness(0.95); }
 
-/* Slightly smaller for horizontal row scrollers */
-.row-scroll::-webkit-scrollbar{ height:16px; }
-.row-scroll::-webkit-scrollbar-track{ background: var(--surface); }
-.row-scroll::-webkit-scrollbar-thumb{ border-radius:999px; }
+/* Slightly smaller for horizontal row scrollers: hide native scrollbar (we use pager) */
+.row-scroll::-webkit-scrollbar{ display: none; }
+.row-scroll::-webkit-scrollbar-track{ display: none; }
+.row-scroll::-webkit-scrollbar-thumb{ display: none; }
 
 /* Search dropdown and other smaller panes */
 .search-dropdown::-webkit-scrollbar{ width:16px; }
@@ -1021,8 +1221,9 @@ select.search-input, select.input{ min-width: 64px }
     font-size: 22px;
   }
   .hero-title {
-    font-size: 36px;
+    font-size: 32px;
   }
+
 }
 
 @media (max-width: 1024px) {

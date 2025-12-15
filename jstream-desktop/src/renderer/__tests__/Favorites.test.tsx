@@ -26,7 +26,7 @@ test('Favorites toggle calls database IPC', async () => {
     </ChakraProvider>
   )
 
-  const favBtns = await screen.findAllByLabelText('Favorite Test Movie')
+  const favBtns = await screen.findAllByLabelText('Add to list Test Movie')
   expect(favBtns.length).toBeGreaterThan(0)
   const favBtn = favBtns[0]
   await act(async () => {
