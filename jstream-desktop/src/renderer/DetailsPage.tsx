@@ -351,6 +351,39 @@ export default function DetailsPage({ tmdbId, itemTypeHint, onPlay, onSelect, on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seasons, episodes, similar, recommendations, cast]);
 
+  // Listen for external requests to pause/resume the hero trailer (e.g., when another preview plays)
+  useEffect(() => {
+    function handlePause() {
+      // stop showing the hero trailer
+      setTrailerPlaying(false);
+      // also request iframe to stop if present
+      if (trailerIframeRef.current) {
+        try {
+          trailerIframeRef.current.contentWindow?.postMessage('{"event":"command","func":"stopVideo","args":""}', '*');
+        } catch (e) { /* ignore */ }
+      }
+    }
+    function handleResume() {
+      if (trailerKey) {
+        setTrailerPlaying(true);
+      }
+    }
+    // Expose a global controller for immediate control from other components
+    (window as any).__appTrailerController = {
+      pause: handlePause,
+      resume: handleResume,
+    };
+
+    // Keep legacy event listeners for compatibility
+    window.addEventListener('app:pause-hero-trailer', handlePause as EventListener);
+    window.addEventListener('app:resume-hero-trailer', handleResume as EventListener);
+    return () => {
+      try { delete (window as any).__appTrailerController; } catch (e) { /* ignore */ }
+      window.removeEventListener('app:pause-hero-trailer', handlePause as EventListener);
+      window.removeEventListener('app:resume-hero-trailer', handleResume as EventListener);
+    };
+  }, [trailerKey]);
+
   if (!tmdbId) return <Box p={4}><Text>Select a movie or TV show to view details.</Text></Box>;
   if (loading) return <Box p={4}><Spinner /></Box>;
   if (!item) return <Box p={4}><Text>Item not found.</Text></Box>;

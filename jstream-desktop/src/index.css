@@ -338,7 +338,8 @@ body{
 .hero-overlay{ position:absolute; inset:0; pointer-events:none; background: linear-gradient(180deg, rgba(0,0,0,0.15) 10%, rgba(0,0,0,0.6) 60%); }
 .hero-content{ padding:36px; max-width:720px; position:relative; z-index:1; pointer-events:auto }
 .hero-trailer{ position:absolute; inset:0; z-index:-1; overflow:hidden; display:block }
-.hero-trailer iframe{ position:absolute; inset:0; width:100%; height:100%; border:0; pointer-events:none; object-fit:cover; }
+.hero-trailer iframe{ position:absolute; inset:0; width:100%; height:100%; border:0; pointer-events:none; object-fit:cover; opacity: 0; transform: scale(1.02); transition: opacity 280ms ease, transform 280ms ease; }
+.hero-banner.playing .hero-trailer iframe{ opacity: 1; transform: scale(1); }
 @media (max-width: 900px){
   .hero-trailer iframe{ object-position: center top; }
 }
@@ -393,19 +394,52 @@ body{
 .hero-banner.full-bleed.playing .hero-actions{ transform: translateY(10%); }
 
 /* Continue Watching feed styles */
-.continue-row{ margin: 12px 0 20px; padding: 0 4px; z-index: 2000; position: static; }
+.continue-row{ margin: 12px 0 0; padding: 0 4px; z-index: 2000; position: relative; overflow: visible; }
 .continue-title{ font-size:24px; font-weight:700; margin:6px 8px; color:#fff; }
-.continue-scroll{ display:flex; gap:12px; overflow-x:auto; padding:12px 8px 16px; }
-.continue-card{ width: 420px; flex: 0 0 420px; border-radius:8px; overflow:hidden; cursor:pointer; position:relative; }
-.continue-backdrop{ width:100%; height: 180px; background-size:cover; background-position:center; position:relative; display:flex; align-items:flex-end; }
-.continue-backdrop.placeholder{ background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.2)); height:120px; }
-.continue-logo{ width: 220px; max-width:60%; margin: 12px; display:block; filter: drop-shadow(0 6px 18px rgba(0,0,0,0.6)); }
-.continue-logo-text{ margin:12px; font-weight:800; font-size:18px; color:#fff; text-shadow: 0 4px 12px rgba(0,0,0,0.6); }
+.continue-scroll{ display:flex; gap:12px; overflow-x:auto; overflow-y:visible; padding:8px 8px 0; align-items:flex-start; height: auto !important; max-height: none !important; /* ensure row shrinks to content */ }
+.continue-scroll > * { align-self: flex-start; }
+.continue-scroll { height: fit-content !important; }
+.continue-card{ width: 420px; flex: 0 0 420px; border-radius:8px; overflow:visible; cursor:pointer; position:relative; display:flex; flex-direction:column; align-items:stretch; transition: transform 220ms cubic-bezier(.2,.9,.2,1), box-shadow 220ms cubic-bezier(.2,.9,.2,1), border-color 180ms ease; border: 1px solid rgba(255,255,255,0.03); }
+.continue-card:hover, .continue-card:focus { transform: translateY(-6px) scale(1.02); box-shadow: 0 18px 40px rgba(229,9,20,0.12); border-color: rgba(229,9,20,0.18); }
+.continue-card:focus-visible{ outline: none; box-shadow: 0 20px 50px rgba(229,9,20,0.18), 0 6px 18px rgba(0,0,0,0.6); border-color: rgba(229,9,20,0.28); }
+.continue-card.hovered{ transform: translateY(-18px) scale(1.12); box-shadow: 0 40px 90px rgba(229,9,20,0.20); z-index: 120; }
+.continue-backdrop{ width:100%; min-height: 180px; height: auto; background-size:cover; background-position:center; position:relative; display:flex; align-items:flex-end; transition: transform 260ms ease, background-size 260ms ease; overflow:hidden; max-height:260px; }
+.continue-backdrop.placeholder{ background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.2)); min-height:120px; height:auto; }
+.continue-logo{ width: 220px; max-width:60%; margin: 12px 12px 6px 12px; display:block; filter: drop-shadow(0 6px 18px rgba(0,0,0,0.6)); max-height:64px; height:auto; object-fit:contain; }
+.continue-logo-text{ margin:12px 12px 6px 12px; font-weight:800; font-size:18px; color:#fff; text-shadow: 0 4px 12px rgba(0,0,0,0.6); }
+
+/* ensure cards don't inadvertently add bottom margin */
+.continue-card{ margin-bottom: 0; }
+
+/* In-card trailer overlay for hover previews */
+.continue-trailer-overlay{ position:absolute; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; background: linear-gradient(180deg, rgba(0,0,0,0.0), rgba(0,0,0,0.65)); opacity:0; transition: opacity 240ms ease, transform 240ms ease; pointer-events:none; border-radius:8px; overflow:hidden; }
+.continue-trailer-overlay.show{ opacity:1; }
+.continue-trailer-overlay iframe{ width:100%; height:100%; border:0; object-fit:cover; transform: scale(1); transition: transform 280ms ease; }
+.continue-card.hovered .continue-backdrop{ transform: scale(1.06); }
+.continue-card.hovered .continue-trailer-overlay iframe{ transform: scale(1.04); }
+
+/* When a card expands, slightly increase spacing so it doesn't collide */
+.continue-scroll { gap: 16px; }
+
+/* Larger hover expansion on wide screens: increase flex-basis more */
+@media (min-width: 1200px) {
+  .continue-card{ width: 460px; flex: 0 0 460px; }
+  .continue-card.hovered{  }
+}
+
+@media (max-width: 900px){
+  .continue-card{ width: 320px; flex: 0 0 320px; }
+  .continue-backdrop{ min-height: 140px; }
+  .continue-card.hovered{ transform: translateY(-10px) scale(1.08); z-index: 80; }
+}
 
 @media (max-width: 900px){
   .continue-card{ width: 320px; flex: 0 0 320px; }
   .continue-backdrop{ height: 140px; }
 }
+
+/* Focus lift for keyboard users inside continue rows */
+.continue-scroll .continue-card:focus-visible{ transform: translateY(-4px) scale(1.01); box-shadow: 0 12px 30px rgba(229,9,20,0.08); }
 
 /* Detail hero adjustments for backdrop, autoplay trailer and full-bleed layout */
 /* Make the detail hero break out of the centered content container and use the full viewport width, starting from the top */

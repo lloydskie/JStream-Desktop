@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { fetchTMDB } from '../../utils/tmdbClient';
 
 export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:number|string, type?:'movie'|'tv')=>void, onSelect?: (id:number|string, type?:'movie'|'tv')=>void }) {
@@ -6,6 +6,12 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
   const [loading, setLoading] = useState(true);
   const [debugRaw, setDebugRaw] = useState<any>(null);
   const [debugNormalized, setDebugNormalized] = useState<any>(null);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [hoverTrailerKey, setHoverTrailerKey] = useState<string | null>(null);
+  const [hoverLoading, setHoverLoading] = useState(false);
+  const hoverTokenRef = useRef<number>(0);
 
   useEffect(() => {
     let mounted = true;
@@ -116,7 +122,8 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
             const data = await fetchTMDB(`${type}/${id}`);
             console.log(`ContinueWatching: fetched ${type}/${id} successfully`);
             if (!mounted) break;
-            const backdrop = data.backdrop_path || data.poster_path || null;
+            const backdrop = data.backdrop_path || null;
+            const poster = data.poster_path || null;
             // try to fetch logos (images endpoint) — prefer english
             let logoPath: string | null = null;
             try {
@@ -130,7 +137,7 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
               // ignore
             }
 
-            out.push({ id, type, data, backdrop, logoPath });
+            out.push({ id, type, data, backdrop, poster, logoPath });
           } catch (e) {
             console.log(`ContinueWatching: failed to fetch ${type}/${id}`, e);
             // ignore item
@@ -147,6 +154,52 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
     load();
     return () => { mounted = false; }
   }, []);
+
+  // Keyboard navigation and focus scroll
+  useEffect(() => {
+    function keyHandler(e: KeyboardEvent) {
+      if (focusedIndex === null) return;
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        const next = Math.min((focusedIndex ?? 0) + 1, (items || []).length - 1);
+        setFocusedIndex(next);
+        scrollToIndex(next);
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const prev = Math.max((focusedIndex ?? 0) - 1, 0);
+        setFocusedIndex(prev);
+        scrollToIndex(prev);
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const it = items[focusedIndex ?? 0];
+        if (it) {
+          if (onPlay) onPlay(it.id, it.type);
+          else if (onSelect) onSelect(it.id, it.type);
+        }
+      }
+    }
+    window.addEventListener('keydown', keyHandler);
+    return () => window.removeEventListener('keydown', keyHandler);
+  }, [focusedIndex, items, onPlay, onSelect]);
+
+  function scrollToIndex(idx: number) {
+    const container = scrollerRef.current;
+    if (!container) return;
+    const child = container.children[idx] as HTMLElement | undefined;
+    if (child) child.scrollIntoView({ behavior: 'smooth', inline: 'center' });
+  }
+
+  function handleWheel(e: React.WheelEvent) {
+    const container = scrollerRef.current;
+    if (!container) return;
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      container.scrollBy({ left: e.deltaY, behavior: 'auto' });
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }
 
     // Expose a small debug control when a dev flag is set so we can inspect
   // the raw recent data in the running app without modifying the DB.
@@ -185,9 +238,68 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
   return (
     <section className="continue-row">
       <h2 className="continue-title">Continue Watching</h2>
-      <div className="continue-scroll" role="list">
-        {items.map((it:any) => (
-          <div key={`${it.type}-${it.id}`} className="continue-card" role="listitem" onClick={() => onPlay ? onPlay(it.id, it.type) : (onSelect && onSelect(it.id, it.type))}>
+      <div className="continue-scroll" role="list" ref={scrollerRef} onWheel={handleWheel}>
+        {items.map((it:any, idx:number) => (
+          <div key={`${it.type}-${it.id}`} className={`continue-card ${hoverIndex===idx? 'hovered':''}`} role="listitem" onClick={() => onPlay ? onPlay(it.id, it.type) : (onSelect && onSelect(it.id, it.type))} tabIndex={0} onFocus={() => setFocusedIndex(idx)}
+            onMouseEnter={async () => {
+              const token = ++hoverTokenRef.current;
+              try {
+                setHoverIndex(idx);
+                setHoverLoading(true);
+                // pause global hero trailer while preview plays
+                try {
+                  const ctrl = (window as any).__appTrailerController;
+                  if (ctrl && typeof ctrl.pause === 'function') ctrl.pause();
+                  else window.dispatchEvent(new CustomEvent('app:pause-hero-trailer'));
+                } catch (e) {
+                  window.dispatchEvent(new CustomEvent('app:pause-hero-trailer'));
+                }
+                // fetch videos for this item
+                const typePath = it.type || 'movie';
+                const data = await fetchTMDB(`${typePath}/${it.id}/videos`, { language: 'en-US' });
+                // ensure still hovering the same index
+                if (token !== hoverTokenRef.current) {
+                  // user moved away before fetch completed
+                  setHoverLoading(false);
+                  return;
+                }
+                const results: any[] = data?.results || [];
+                const typePriority = ['Trailer','Teaser','Featurette','Clip','Behind the Scenes','Bloopers'];
+                let chosen: any = null;
+                for (const t of typePriority) {
+                  const candidates = results.filter((v:any) => v.type === t);
+                  if (candidates.length === 0) continue;
+                  chosen = candidates.find((v:any) => v.official === true) || candidates[0];
+                  break;
+                }
+                if (!chosen && results.length > 0) chosen = results[0];
+                if (chosen && (chosen.site || '').toLowerCase() === 'youtube' && chosen.key) {
+                  setHoverTrailerKey(chosen.key);
+                } else {
+                  setHoverTrailerKey(null);
+                }
+              } catch (e) {
+                console.error('ContinueWatching: failed to fetch preview videos', e);
+                setHoverTrailerKey(null);
+              } finally {
+                setHoverLoading(false);
+              }
+            }}
+            onMouseLeave={() => {
+              // invalidate any pending fetch
+              hoverTokenRef.current++;
+              setHoverIndex(null);
+              setHoverTrailerKey(null);
+                // resume hero trailer when preview stops
+              try {
+                const ctrl = (window as any).__appTrailerController;
+                if (ctrl && typeof ctrl.resume === 'function') ctrl.resume();
+                else window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
+              } catch (e) {
+                window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
+              }
+            }}
+          >
             {it.backdrop ? (
               <div className="continue-backdrop" style={{ backgroundImage: `url(https://image.tmdb.org/t/p/original${it.backdrop})` }}>
                 {it.logoPath ? (
@@ -195,6 +307,19 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
                 ) : (
                   <div className="continue-logo-text">{it.data?.title || it.data?.name}</div>
                 )}
+                {/* Trailer overlay (muted, autoplay) */}
+                {hoverIndex === idx && hoverTrailerKey ? (
+                  <div className={`continue-trailer-overlay ${hoverTrailerKey ? 'show' : ''}`} aria-hidden={hoverTrailerKey ? 'false' : 'true'}>
+                    <iframe
+                      src={`https://www.youtube.com/embed/${hoverTrailerKey}?rel=0&autoplay=1&mute=0&controls=0&playsinline=1&modestbranding=1&loop=1&playlist=${hoverTrailerKey}&enablejsapi=1`}
+                      title="Preview"
+                      frameBorder="0"
+                      allow="autoplay; encrypted-media"
+                      allowFullScreen
+                      loading="lazy"
+                    />
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="continue-backdrop placeholder">

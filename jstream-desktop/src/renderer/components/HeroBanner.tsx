@@ -110,6 +110,7 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
   const backdrop = movie.backdrop_path ? `https://image.tmdb.org/t/p/original${movie.backdrop_path}` : (movie.poster_path ? `https://image.tmdb.org/t/p/original${movie.poster_path}` : undefined);
   const heroNode = typeof document !== 'undefined' ? document.getElementById('hero-root') : null;
   const [isPlaying, setIsPlaying] = useState(false);
+  const [pausedExternally, setPausedExternally] = useState(false);
   const [overviewExpanded, setOverviewExpanded] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
   const interactionTimer = useRef<number | null>(null);
@@ -155,7 +156,7 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
 
   // when trailerKey appears, consider trailer 'playing' after a short delay and collapse overview
   useEffect(() => {
-    if (trailerKey) {
+    if (trailerKey && !pausedExternally) {
       // small delay to allow iframe autoplay to start
       const t = window.setTimeout(() => {
         setIsPlaying(true);
@@ -166,7 +167,93 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
       setIsPlaying(false);
       setOverviewExpanded(true);
     }
-  }, [trailerKey]);
+  }, [trailerKey, pausedExternally]);
+
+  // Pause/resume trailer when hero scrolls out of view (do not override external pauses)
+  useEffect(() => {
+    if (!heroRef.current || !trailerKey) return;
+    let mounted = true;
+    const pausedByVisibility = { value: false };
+
+    const handlePause = () => {
+      if (pausedByVisibility.value) return;
+      pausedByVisibility.value = true;
+      setIsPlaying(false);
+      try {
+        const el = document.querySelector('.hero-trailer iframe') as HTMLIFrameElement | null;
+        if (el && el.contentWindow) {
+          // YouTube postMessage API
+          if (String(trailerKey).startsWith('vimeo:')) {
+            // Vimeo player expects {method: 'pause'} messages
+            el.contentWindow.postMessage(JSON.stringify({ method: 'pause' }), '*');
+          } else {
+            el.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+          }
+        }
+      } catch (e) { /* ignore */ }
+    };
+
+    const handleResume = () => {
+      if (!pausedByVisibility.value) return;
+      pausedByVisibility.value = false;
+      // Only resume if not paused externally by previews or other controllers
+      if (mounted && !pausedExternally) {
+        try {
+          const el = document.querySelector('.hero-trailer iframe') as HTMLIFrameElement | null;
+          if (el && el.contentWindow) {
+            if (String(trailerKey).startsWith('vimeo:')) {
+              el.contentWindow.postMessage(JSON.stringify({ method: 'play' }), '*');
+            } else {
+              el.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+            }
+          }
+        } catch (e) { /* ignore */ }
+        setIsPlaying(true);
+      }
+    };
+
+    const obs = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        // if less than 20% visible, consider it out of view
+        if (entry.intersectionRatio < 0.2) {
+          handlePause();
+        } else {
+          handleResume();
+        }
+      }
+    }, { threshold: [0, 0.2, 0.5, 1] });
+
+    try { obs.observe(heroRef.current); } catch (e) { /* ignore */ }
+    return () => { mounted = false; try { obs.disconnect(); } catch (e) {} };
+  }, [heroRef.current, trailerKey, pausedExternally]);
+
+  // Expose a global trailer controller so other components can pause/resume the hero trailer
+  useEffect(() => {
+    function pause() {
+      setPausedExternally(true);
+      setIsPlaying(false);
+      try {
+        const el = document.querySelector('.hero-trailer iframe') as HTMLIFrameElement | null;
+        if (el && el.contentWindow) {
+          // pause via YouTube JS API
+          el.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+        }
+      } catch (e) { /* ignore */ }
+    }
+    function resume() {
+      setPausedExternally(false);
+      try {
+        const el = document.querySelector('.hero-trailer iframe') as HTMLIFrameElement | null;
+        if (el && el.contentWindow) {
+          // resume via YouTube JS API
+          el.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+        }
+      } catch (e) { /* ignore */ }
+      if (trailerKey && !pausedExternally) setIsPlaying(true);
+    }
+    try { (window as any).__appTrailerController = { pause, resume }; } catch (e) { /* ignore */ }
+    return () => { try { delete (window as any).__appTrailerController; } catch (e) { /* ignore */ } };
+  }, [trailerKey, pausedExternally]);
 
   // user interaction expands overview; auto-collapse after inactivity
   function handleUserInteract() {
@@ -330,7 +417,7 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
             })()
           ) : (
             <iframe
-              src={`https://www.youtube.com/embed/${encodeURIComponent(String(trailerKey))}?rel=0&autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&playsinline=1&modestbranding=1&loop=1&playlist=${encodeURIComponent(String(trailerKey))}`}
+              src={`https://www.youtube.com/embed/${encodeURIComponent(String(trailerKey))}?rel=0&autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&playsinline=1&modestbranding=1&loop=1&playlist=${encodeURIComponent(String(trailerKey))}&enablejsapi=1`}
               title="Trailer"
               frameBorder="0"
               allow="autoplay; encrypted-media"
