@@ -5,7 +5,7 @@ import PlusMinusIcon from './icons/PlusMinusIcon';
 import InfoIcon from './icons/InfoIcon';
 import SpeakerIcon from './icons/SpeakerIcon';
 
-export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOpen }: { movie?: any, onPlay?: (id:number, type?:'movie'|'tv')=>void, onMore?: (id:number, type?:'movie'|'tv')=>void, fullBleed?: boolean, isModalOpen?: boolean }) {
+export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOpen, isVisible = true }: { movie?: any, onPlay?: (id:number, type?:'movie'|'tv')=>void, onMore?: (id:number, type?:'movie'|'tv')=>void, fullBleed?: boolean, isModalOpen?: boolean, isVisible?: boolean }) {
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [trailerError, setTrailerError] = useState<string | null>(null);
 
@@ -13,7 +13,7 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
     let mounted = true;
     setTrailerKey(null);
     setTrailerError(null);
-    if (!movie?.id) return;
+    if (!movie?.id || isModalOpen || !isVisible) return;
 
     // Dev override: set `window.__DEV_TRAILER_KEY = 'YOUTUBE_KEY'` in DevTools to force a trailer
     const devKey = (window as any).__DEV_TRAILER_KEY;
@@ -104,7 +104,7 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
 
     loadTrailer();
     return () => { mounted = false; }
-  }, [movie?.id]);
+  }, [movie?.id, isModalOpen, isVisible]);
 
   if (!movie) return null;
   const backdrop = movie.backdrop_path ? `https://image.tmdb.org/t/p/original${movie.backdrop_path}` : (movie.poster_path ? `https://image.tmdb.org/t/p/original${movie.poster_path}` : undefined);
@@ -310,7 +310,7 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
   }, [movie?.id, resolvedCert]);
 
   const jsx = (
-    <section ref={heroRef as any} className={"hero-banner" + (fullBleed ? ' full-bleed' : '') + (isPlaying ? ' playing' : '')} style={{backgroundImage: `url(${backdrop})`}}>
+    <section ref={heroRef as any} className={"hero-banner" + (fullBleed ? ' full-bleed' : '') + (isPlaying ? ' playing' : '')} style={{backgroundImage: `url(${backdrop})`, display: isVisible ? 'block' : 'none'}}>
       {/* autoplaying, muted trailer placed behind the hero content */}
       <div className="hero-trailer" aria-hidden={!trailerKey}>
         {trailerKey && (

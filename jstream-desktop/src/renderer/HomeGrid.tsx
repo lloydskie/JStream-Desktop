@@ -5,7 +5,7 @@ import HeroBanner from './components/HeroBanner';
 import Row from './components/Row';
 import ContinueWatching from './components/ContinueWatching';
 
-export default function HomeGrid({ onSelectMovie, onPlayMovie, selectedTmdbId, selectedGenre, isModalOpen }: { onSelectMovie?: (tmdbId: number, type?:'movie'|'tv') => void, onPlayMovie?: (tmdbId: number, type?:'movie'|'tv') => void, selectedTmdbId?: number | null, selectedGenre?: number | '' , isModalOpen?: boolean }) {
+export default function HomeGrid({ onSelectMovie, onPlayMovie, selectedTmdbId, selectedGenre, isModalOpen, onSetFeatured }: { onSelectMovie?: (tmdbId: number, type?:'movie'|'tv') => void, onPlayMovie?: (tmdbId: number, type?:'movie'|'tv') => void, selectedTmdbId?: number | null, selectedGenre?: number | '' , isModalOpen?: boolean, onSetFeatured?: (movie: any) => void }) {
   const [loading, setLoading] = useState(true);
   const [featured, setFeatured] = useState<any | null>(null);
   const [popular, setPopular] = useState<any[]>([]);
@@ -111,7 +111,9 @@ export default function HomeGrid({ onSelectMovie, onPlayMovie, selectedTmdbId, s
         setPopular(popularAllocated.slice(0, desired));
         setBecauseYouWatched(becauseAllocated.slice(0, desired));
         setTopRated(ratedAllocated.slice(0, desired));
-        setFeatured((primaryPopular[0]) || null);
+        const feat = (primaryPopular[0]) || null;
+        setFeatured(feat);
+        onSetFeatured && onSetFeatured(feat);
         // because you watched -> if last_selected_movie exists, fetch recommendations
         try{
           const last = await (window as any).database.getPersonalization('last_selected_movie');
@@ -130,8 +132,6 @@ export default function HomeGrid({ onSelectMovie, onPlayMovie, selectedTmdbId, s
 
   return (
     <>
-      {featured && <HeroBanner movie={featured} onPlay={onPlayMovie || onSelectMovie} onMore={onSelectMovie} fullBleed isModalOpen={isModalOpen} />}
-
       <div className="app-shell">
         {loading && <Spinner />}
 

@@ -15,6 +15,7 @@ import AnimePage from './AnimePage';
 import CollectionsPage from './CollectionsPage';
 import PersonPage from './PersonPage';
 import ContinueWatching from './components/ContinueWatching';
+import HeroBanner from './components/HeroBanner';
 import { useState, useEffect } from 'react';
 // search UI removed from header per request
 import { fetchTMDB } from '../utils/tmdbClient';
@@ -47,6 +48,7 @@ export default function App() {
   const [tvGenres, setTvGenres] = useState<any[]>([]);
   const [selectedGenre, setSelectedGenre] = useState<number | ''>('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [featuredMovie, setFeaturedMovie] = useState<any | null>(null);
   
 
   useEffect(() => {
@@ -184,7 +186,8 @@ export default function App() {
     <>
     <ChakraProvider value={defaultSystem}>
       <ErrorBoundary>
-        <Tabs index={activeIndex} onChange={index => setActiveIndex(index)} isFitted variant="enclosed" isLazy lazyBehavior="unmount">
+        {featuredMovie && <HeroBanner movie={featuredMovie} onPlay={handlePlayMovie} onMore={handleSelectMovie} fullBleed isModalOpen={playerModalOpen || activeIndex === 10} isVisible={activeIndex === 0} />}
+        <Tabs index={activeIndex} onChange={index => setActiveIndex(index)} isFitted variant="enclosed" isLazy lazyBehavior="unmount" style={{width: '100%'}}>
           {/* Header is portaled to #header-root so it can overlay the full-bleed hero without being constrained */}
           {(() => {
             const headerNode = typeof document !== 'undefined' ? document.getElementById('header-root') : null;
@@ -244,17 +247,17 @@ export default function App() {
           ) : null}
           {activeIndex === 0 && <ContinueWatching onPlay={handlePlayMovie} onSelect={handleSelectMovie} />}
             <div className="app-shell" aria-hidden={playerModalOpen} style={playerModalOpen ? { pointerEvents: 'none' } : undefined}>
-              <TabPanels>
-                <TabPanel><HomeGrid onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedTmdbId={selectedTmdbId} selectedGenre={selectedGenre} isModalOpen={playerModalOpen} /></TabPanel>
-                <TabPanel><TVPage genres={tvGenres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
-                <TabPanel><MoviesPage genres={genres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
-                <TabPanel><div>New & Popular content here</div></TabPanel>
-                <TabPanel><div>My List content here</div></TabPanel>
-                <TabPanel><div>Browse by Languages content here</div></TabPanel>
-                <TabPanel><SearchPage movieGenres={genres} tvGenres={tvGenres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} onSelectPerson={handleSelectPerson} onSelectCollection={handleGoToCollections} /></TabPanel>
-                <TabPanel><ProfilePage /></TabPanel>
-                <TabPanel><CollectionsPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedCollectionId={selectedCollectionId} /></TabPanel>
-                <TabPanel><DetailsPage tmdbId={detailsTmdbId} itemTypeHint={detailsType} onPlay={handlePlayMovie} onSelect={handleSelectMovie} onSelectPerson={handleSelectPerson} onGoToCollections={handleGoToCollections} /></TabPanel>
+              <TabPanels style={{width: '100%', padding: 0}}>
+                <TabPanel sx={{padding: 0}}><HomeGrid onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedTmdbId={selectedTmdbId} selectedGenre={selectedGenre} isModalOpen={playerModalOpen} onSetFeatured={setFeaturedMovie} /></TabPanel>
+                <TabPanel sx={{padding: 0}}><TVPage genres={tvGenres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
+                <TabPanel sx={{padding: 0}}><MoviesPage genres={genres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
+                <TabPanel sx={{padding: 0}}><div>New & Popular content here</div></TabPanel>
+                <TabPanel sx={{padding: 0}}><div>My List content here</div></TabPanel>
+                <TabPanel sx={{padding: 0}}><div>Browse by Languages content here</div></TabPanel>
+                <TabPanel sx={{padding: 0}}><SearchPage movieGenres={genres} tvGenres={tvGenres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} onSelectPerson={handleSelectPerson} onSelectCollection={handleGoToCollections} /></TabPanel>
+                <TabPanel sx={{padding: 0}}><ProfilePage /></TabPanel>
+                <TabPanel sx={{padding: 0}}><CollectionsPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedCollectionId={selectedCollectionId} /></TabPanel>
+                <TabPanel sx={{padding: 0}}><DetailsPage tmdbId={detailsTmdbId} itemTypeHint={detailsType} onPlay={handlePlayMovie} onSelect={handleSelectMovie} onSelectPerson={handleSelectPerson} onGoToCollections={handleGoToCollections} /></TabPanel>
                 <TabPanel><VideoPlayerPage playerType={playerType} params={playerParams} onBack={handleBackFromPlayer} /></TabPanel>
                 <TabPanel><PersonPage personId={selectedPersonId} onSelectWork={handleSelectMovie} /></TabPanel>
               </TabPanels>
