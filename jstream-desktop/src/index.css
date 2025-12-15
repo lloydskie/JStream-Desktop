@@ -1,3 +1,5 @@
+@import url('https://fonts.cdnfonts.com/css/helvetica-neue-55');
+
 :root{
   /* Global dark theme: base background should be #141414 (user request) */
   --bg:#141414;
@@ -88,7 +90,7 @@ html::before{
 html, body, #root { background: transparent; width: 100%; }
 body{
   margin:0;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  font-family: 'Helvetica Neue', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica', Arial, sans-serif;
   /* keep body background transparent so the html pseudo-element shows through */
   background-color: transparent;
   color: #fff;
@@ -99,7 +101,8 @@ body{
 }
 
 .app-shell{
-  padding: calc(var(--header-height) + 8px) 0 24px;
+  /* remove large top padding that was accounting for header height */
+  padding: 8px 0 24px;
   margin: 10px 0;
   width: 100%;
   min-height: 100vh; /* ensure content area fills viewport */
@@ -133,7 +136,7 @@ body{
 
 .app-header .header-controls{ margin-left: auto; }
 
-.app-header [role="tablist"]{ display:flex; gap:18px; align-items:center; padding-top: 20px; }
+.app-header [role="tablist"]{ display:flex; gap:18px; align-items:center; padding-top: 6px; }
 
 /* place top-nav centered between brand and header-controls */
 .app-header .brand{ flex:0 0 auto; }
@@ -298,7 +301,7 @@ body{
 
 /* carousel / row peek animation */
 .row-container{ margin-bottom:28px }
-.row-title{ font-size:16px; font-weight:700; margin:6px 0 10px 4px }
+.row-title{ font-size:24px; font-weight:700; margin:6px 8px }
 .row-scroll{ display:flex; gap:12px; overflow:auto; padding-bottom:6px }
 .row-scroll::-webkit-scrollbar{ height:16px }
 .row-scroll::-webkit-scrollbar-thumb{ background:rgba(255,255,255,0.06); border-radius:6px }
@@ -701,8 +704,19 @@ select.search-input, select.input{ min-width: 64px }
   /* Normalize tab sizes and alignment so every nav item is the same height */
   .app-header [role="tab"]{
     color: #fff;
-    /* keep font-size and visual styling; heights are set above for consistency */
-    font-size: 15px;
+    /* increase nav label size to match row titles / continue title */
+    font-size: 24px;
+    font-weight: 700;
+    /* top:10px, right/left:8px, bottom:0 */
+    padding: 10px 8px 0 !important;
+  }
+
+  /* Specific override for the generated Chakra Tabs tablist in header
+     (selector provided by user). Ensures the tab buttons have the requested
+     top/bottom padding even if class names change order. */
+  #header-root > header > div.chakra-tabs__tablist.css-1ev1cfq [role="tab"] {
+    padding-top: 10px !important;
+    padding-bottom: 0 !important;
   }
   .app-header [role="tab"][aria-selected="true"]{ background: rgba(255,255,255,0.04); color: #fff; }
 }
