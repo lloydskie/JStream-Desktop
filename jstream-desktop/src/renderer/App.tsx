@@ -14,6 +14,7 @@ import TVPage from './TVPage';
 import AnimePage from './AnimePage';
 import CollectionsPage from './CollectionsPage';
 import PersonPage from './PersonPage';
+import ContinueWatching from './components/ContinueWatching';
 import { useState, useEffect } from 'react';
 // search UI removed from header per request
 import { fetchTMDB } from '../utils/tmdbClient';
@@ -114,6 +115,8 @@ export default function App() {
     setPlayerModalParams(combined);
     setPlayerModalOpen(true);
     try { (window as any).database.setPersonalization('last_selected_movie', idStr); } catch(e) { /* ignore */ }
+    // Save to watch history when starting to play
+    try { (window as any).database.watchHistorySet(idStr, 0); } catch(e) { console.error('watchHistorySet on play failed', e); }
   }
 
   function handleBackFromPlayer() {
@@ -181,7 +184,7 @@ export default function App() {
     <>
     <ChakraProvider value={defaultSystem}>
       <ErrorBoundary>
-        <Tabs index={activeIndex} onChange={index => setActiveIndex(index)} isFitted variant="enclosed">
+        <Tabs index={activeIndex} onChange={index => setActiveIndex(index)} isFitted variant="enclosed" isLazy lazyBehavior="unmount">
           {/* Header is portaled to #header-root so it can overlay the full-bleed hero without being constrained */}
           {(() => {
             const headerNode = typeof document !== 'undefined' ? document.getElementById('header-root') : null;
@@ -239,9 +242,10 @@ export default function App() {
               </div>
             </div>
           ) : null}
+          {activeIndex === 0 && <ContinueWatching onPlay={handlePlayMovie} onSelect={handleSelectMovie} />}
             <div className="app-shell" aria-hidden={playerModalOpen} style={playerModalOpen ? { pointerEvents: 'none' } : undefined}>
               <TabPanels>
-                <TabPanel><HomeGrid onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedTmdbId={selectedTmdbId} selectedGenre={selectedGenre} /></TabPanel>
+                <TabPanel><HomeGrid onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedTmdbId={selectedTmdbId} selectedGenre={selectedGenre} isModalOpen={playerModalOpen} /></TabPanel>
                 <TabPanel><TVPage genres={tvGenres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
                 <TabPanel><MoviesPage genres={genres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
                 <TabPanel><div>New & Popular content here</div></TabPanel>
@@ -260,8 +264,8 @@ export default function App() {
       </ErrorBoundary>
     </ChakraProvider>
     {playerModalOpen && (
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ position: 'relative', width: '90%', height: '90%', background: '#000', boxShadow: '0 10px 30px rgba(0,0,0,0.6)' }}>
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setPlayerModalOpen(false)}>
+        <div style={{ position: 'relative', width: '70vw', height: 'calc(70vw * 9 / 16)', background: 'var(--surface-card)', borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.6)', overflow: 'hidden', zIndex: 100001 }} onClick={(e) => e.stopPropagation()}>
           <button aria-label="Close player" onClick={() => setPlayerModalOpen(false)} style={{ position: 'absolute', right: 12, top: 12, zIndex: 10, background: 'rgba(255,255,255,0.06)', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: 6 }}>✕</button>
           <div style={{ width: '100%', height: '100%' }}>
             <VideoPlayer type={playerModalType} params={playerModalParams || { tmdbId: selectedTmdbId }} />

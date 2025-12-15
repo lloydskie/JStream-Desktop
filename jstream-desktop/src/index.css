@@ -23,6 +23,52 @@
 }
 #header-root > .app-header{ pointer-events: auto; }
 
+/* Top-level portal for full-bleed hero. Add a bottom-only gradient overlay
+   so the area below the hero blends smoothly into the main app content.
+   The overlay is transparent at the top (no blur) and darkens toward the bottom. */
+#hero-root{
+  position: relative;
+  z-index: 999; /* below root, above default */
+  /* keep hero below header */
+  pointer-events: none;
+}
+#hero-root::after{
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Reduce height so the darker portion sits lower on the page */
+  height: 120px; /* shorter fade so dark area is closer to the bottom */
+  pointer-events: none;
+  /* keep overlay visually below continue row */
+  z-index: -1; /* below continue row */
+  /* Keep top fully transparent; end in fully opaque black at the bottom */
+  background: linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 78%, rgba(0,0,0,1) 100%);
+}
+
+/* Pull the main app root up so it slightly overlaps the hero, and add a top
+   fade so the root content blends into the hero. Adjust the translate/margin
+   and fade height if you want a different overlap. */
+#root{
+  position: relative;
+  z-index: 1000; /* above hero-root overlay but below header */
+  /* lift the root up more so it overlaps hero by a larger amount */
+  margin-top: -10vh;
+}
+#root::before{
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 10vh; /* increased fade height to match larger overlap */
+  pointer-events: none;
+  z-index: -1; /* below continue row */
+  /* transparent at the very top, blending to the app background color toward bottom */
+  background: linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(6,6,6,0.96) 100%);
+}
+
 *{box-sizing:border-box}
 html,body,#root{height:100%; min-height:100%}
 /* Full-page persistent background using a fixed pseudo-element so scrolling never cuts it off */
@@ -46,6 +92,8 @@ body{
   color: #fff;
   -webkit-font-smoothing:antialiased;
   -moz-osx-font-smoothing:grayscale;
+  /* Prevent page-level horizontal scrolling (rows may still scroll internally) */
+  overflow-x: hidden;
 }
 
 .app-shell{
@@ -255,9 +303,10 @@ body{
 .hero-banner.full-bleed{
   /* when portal-mounted into #hero-root the hero is a top-level block and should sit in normal flow */
   position: relative;
-  width: 100vw; /* span the full viewport width */
-  left: 50%;
-  transform: translateX(-50%);
+  /* avoid using 100vw + translate which can cause horizontal overflow when scrollbars appear */
+  left: 0;
+  transform: none;
+  width: 100%;
   /* include the header height so the hero extends up behind the navbar */
   height: calc(72vh + var(--header-height));
   min-height: calc(420px + var(--header-height));
@@ -271,13 +320,13 @@ body{
 }
 
 /* spacer element inserted after the hero to push the centered content below it */
-.hero-spacer{ height: calc(72vh + var(--header-height)); min-height: calc(420px + var(--header-height)); background: transparent; pointer-events: none; }
+.hero-spacer{ height: calc(50vh + var(--header-height)); min-height: calc(420px + var(--header-height)); background: transparent; pointer-events: none; }
 
 /* ensure hero content floats above app-shell children but remains below header */
 .hero-banner.full-bleed .hero-content{ z-index: 6; }
 .hero-overlay{ position:absolute; inset:0; pointer-events:none; background: linear-gradient(180deg, rgba(0,0,0,0.15) 10%, rgba(0,0,0,0.6) 60%); }
 .hero-content{ padding:36px; max-width:720px; position:relative; z-index:1; pointer-events:auto }
-.hero-trailer{ position:absolute; inset:0; z-index:0; overflow:hidden; display:block }
+.hero-trailer{ position:absolute; inset:0; z-index:-1; overflow:hidden; display:block }
 .hero-trailer iframe{ position:absolute; inset:0; width:100%; height:100%; border:0; pointer-events:none; object-fit:cover; }
 @media (max-width: 900px){
   .hero-trailer iframe{ object-position: center top; }
@@ -312,7 +361,7 @@ body{
 }
 @media (max-width: 900px){
   .hero-banner.full-bleed .hero-overlay{ align-items:flex-end; }
-  .hero-banner.full-bleed .hero-content{ position:relative; bottom:auto; left:auto; padding:20px; max-width:100%; text-align:left; }
+  .hero-banner.full-bleed .hero-content{ position:relative; bottom:auto; left:auto; padding:10px 20px 20px; max-width:100%; text-align:left; }
 }
 
 /* Logo styling (title logo image) */
@@ -332,6 +381,21 @@ body{
 .hero-actions{ position: relative; z-index: 10; transition: transform 420ms cubic-bezier(.2,.9,.2,1); }
 .hero-banner.full-bleed.playing .hero-actions{ transform: translateY(10%); }
 
+/* Continue Watching feed styles */
+.continue-row{ margin: 12px 0 20px; padding: 0 4px; z-index: 2000; position: static; }
+.continue-title{ font-size:24px; font-weight:700; margin:6px 8px; color:#fff; }
+.continue-scroll{ display:flex; gap:12px; overflow-x:auto; padding:12px 8px 16px; }
+.continue-card{ width: 420px; flex: 0 0 420px; border-radius:8px; overflow:hidden; cursor:pointer; position:relative; }
+.continue-backdrop{ width:100%; height: 180px; background-size:cover; background-position:center; position:relative; display:flex; align-items:flex-end; }
+.continue-backdrop.placeholder{ background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.2)); height:120px; }
+.continue-logo{ width: 220px; max-width:60%; margin: 12px; display:block; filter: drop-shadow(0 6px 18px rgba(0,0,0,0.6)); }
+.continue-logo-text{ margin:12px; font-weight:800; font-size:18px; color:#fff; text-shadow: 0 4px 12px rgba(0,0,0,0.6); }
+
+@media (max-width: 900px){
+  .continue-card{ width: 320px; flex: 0 0 320px; }
+  .continue-backdrop{ height: 140px; }
+}
+
 /* Detail hero adjustments for backdrop, autoplay trailer and full-bleed layout */
 /* Make the detail hero break out of the centered content container and use the full viewport width, starting from the top */
 .detail-hero{
@@ -339,9 +403,10 @@ body{
   /* full-bleed: expand to viewport width, positioned at the very top */
   position: absolute;
   top: -24px; /* account for app-shell padding-top */
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100vw;
+  /* avoid 100vw + centering transform which can overflow; use full width anchored at left */
+  left: 0;
+  transform: none;
+  width: 100%;
   height: 65vh;
   border-radius: 0; /* full-bleed generally looks better without rounded container corners */
   padding: 0; /* keep the hero edge-to-edge; internal hero-content will provide spacing */

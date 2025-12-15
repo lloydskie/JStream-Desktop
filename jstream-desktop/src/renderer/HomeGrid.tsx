@@ -3,8 +3,9 @@ import { Spinner } from "@chakra-ui/react";
 import { fetchTMDB } from "../utils/tmdbClient";
 import HeroBanner from './components/HeroBanner';
 import Row from './components/Row';
+import ContinueWatching from './components/ContinueWatching';
 
-export default function HomeGrid({ onSelectMovie, onPlayMovie, selectedTmdbId, selectedGenre }: { onSelectMovie?: (tmdbId: number, type?:'movie'|'tv') => void, onPlayMovie?: (tmdbId: number, type?:'movie'|'tv') => void, selectedTmdbId?: number | null, selectedGenre?: number | '' }) {
+export default function HomeGrid({ onSelectMovie, onPlayMovie, selectedTmdbId, selectedGenre, isModalOpen }: { onSelectMovie?: (tmdbId: number, type?:'movie'|'tv') => void, onPlayMovie?: (tmdbId: number, type?:'movie'|'tv') => void, selectedTmdbId?: number | null, selectedGenre?: number | '' , isModalOpen?: boolean }) {
   const [loading, setLoading] = useState(true);
   const [featured, setFeatured] = useState<any | null>(null);
   const [popular, setPopular] = useState<any[]>([]);
@@ -129,9 +130,7 @@ export default function HomeGrid({ onSelectMovie, onPlayMovie, selectedTmdbId, s
 
   return (
     <>
-      {featured && <HeroBanner movie={featured} onPlay={onPlayMovie || onSelectMovie} onMore={onSelectMovie} fullBleed />}
-      {/* spacer keeps the following centered app-shell content below the full-bleed hero */}
-      {featured && <div className="hero-spacer" aria-hidden="true" />}
+      {featured && <HeroBanner movie={featured} onPlay={onPlayMovie || onSelectMovie} onMore={onSelectMovie} fullBleed isModalOpen={isModalOpen} />}
 
       <div className="app-shell">
         {loading && <Spinner />}

@@ -115,7 +115,8 @@ export default function VideoPlayer({ type, params }: VideoPlayerProps) {
           const lastSaved = lastSavedRef.current || 0;
           if (Math.abs(position - lastSaved) > 5) { // save if changed > 5s
             lastSavedRef.current = position;
-            try { (window as any).database.watchHistorySet(tmdbId, position); } catch (e) { /* ignore */ }
+            console.log('VideoPlayer: saving watch history for', tmdbId, 'at position', position);
+            try { (window as any).database.watchHistorySet(tmdbId, position); } catch (e) { console.error('watchHistorySet failed', e); }
           }
         }
       } catch (e) {

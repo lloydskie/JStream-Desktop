@@ -5,7 +5,7 @@ import PlusMinusIcon from './icons/PlusMinusIcon';
 import InfoIcon from './icons/InfoIcon';
 import SpeakerIcon from './icons/SpeakerIcon';
 
-export default function HeroBanner({ movie, onPlay, onMore, fullBleed }: { movie?: any, onPlay?: (id:number, type?:'movie'|'tv')=>void, onMore?: (id:number, type?:'movie'|'tv')=>void, fullBleed?: boolean }) {
+export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOpen }: { movie?: any, onPlay?: (id:number, type?:'movie'|'tv')=>void, onMore?: (id:number, type?:'movie'|'tv')=>void, fullBleed?: boolean, isModalOpen?: boolean }) {
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [trailerError, setTrailerError] = useState<string | null>(null);
 
@@ -111,8 +111,10 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed }: { movie
   const heroNode = typeof document !== 'undefined' ? document.getElementById('hero-root') : null;
   const [isPlaying, setIsPlaying] = useState(false);
   const [overviewExpanded, setOverviewExpanded] = useState(true);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
   const interactionTimer = useRef<number | null>(null);
+  const heroRef = useRef<HTMLElement | null>(null);
+  const [mutePos, setMutePos] = useState<{ top: number; right?: number; left?: number } | null>(null);
 
   // logo URL state — we'll attempt to fetch logos from TMDb images endpoint
   const [logoUrl, setLogoUrl] = useState<string | null>(movie?.logo_path ? `https://image.tmdb.org/t/p/original${movie.logo_path}` : null);
@@ -182,6 +184,52 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed }: { movie
   useEffect(() => {
     return () => { if (interactionTimer.current) window.clearTimeout(interactionTimer.current); };
   }, []);
+
+  // compute position for portaled mute button so it remains clickable when
+  // the app root overlaps the hero. Updates on resize.
+  useEffect(() => {
+    function updatePos() {
+      if (!heroRef.current) return setMutePos(null);
+      const heroEl = heroRef.current as HTMLElement;
+      const certEl = heroEl.querySelector('.hero-certification') as HTMLElement | null;
+      const heroRect = heroEl.getBoundingClientRect();
+
+      // default: place near top-right of hero
+      let top = Math.max(8, heroRect.top + 16);
+      let right = Math.max(8, window.innerWidth - (heroRect.right) + 16);
+      let left: number | undefined = undefined;
+
+      // If a certification element exists, position the mute button beside it (to the right)
+      if (certEl) {
+        const certRect = certEl.getBoundingClientRect();
+        const buttonHeightApprox = 40;
+        top = Math.max(8, Math.round((certRect.top - heroRect.top) + (certRect.height - buttonHeightApprox) / 2));
+        left = Math.round((certRect.right - heroRect.left) + 8); // 8px gap to the right of certification
+      } else {
+        // Fallback: try to mirror hero-actions if present
+        const content = heroEl.querySelector('.hero-content') as HTMLElement | null;
+        const actions = heroEl.querySelector('.hero-actions') as HTMLElement | null;
+        if (content && actions) {
+          const contentRect = content.getBoundingClientRect();
+          const actionsRect = actions.getBoundingClientRect();
+          const actionsCenterY = actionsRect.top + actionsRect.height / 2;
+          top = Math.max(8, (actionsCenterY - heroRect.top) - 20);
+          const contentCenterX = contentRect.left + contentRect.width / 2;
+          const actionsCenterX = actionsRect.left + actionsRect.width / 2;
+          const distance = actionsCenterX - contentCenterX;
+          const mirroredCenterX = contentCenterX - distance;
+          const buttonHalf = 20;
+          right = Math.max(8, (heroRect.right - mirroredCenterX) - buttonHalf);
+        }
+      }
+
+      setMutePos(left ? { top: top, left } : { top: Math.round(top), right: Math.round(right) });
+    }
+    updatePos();
+    window.addEventListener('resize', updatePos);
+    window.addEventListener('scroll', updatePos, { passive: true });
+    return () => { window.removeEventListener('resize', updatePos); window.removeEventListener('scroll', updatePos); };
+  }, [heroRef.current, isPlaying, trailerKey]);
 
   // Extract certification so we can render it and debug why it might be missing
   function extractCertification(m: any) {
@@ -262,7 +310,7 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed }: { movie
   }, [movie?.id, resolvedCert]);
 
   const jsx = (
-    <section className={"hero-banner" + (fullBleed ? ' full-bleed' : '') + (isPlaying ? ' playing' : '')} style={{backgroundImage: `url(${backdrop})`}}>
+    <section ref={heroRef as any} className={"hero-banner" + (fullBleed ? ' full-bleed' : '') + (isPlaying ? ' playing' : '')} style={{backgroundImage: `url(${backdrop})`}}>
       {/* autoplaying, muted trailer placed behind the hero content */}
       <div className="hero-trailer" aria-hidden={!trailerKey}>
         {trailerKey && (
@@ -296,14 +344,18 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed }: { movie
       {/* overlay is now a separate background layer so it won't block the trailer or banner visuals */}
       <div className="hero-overlay" aria-hidden="true" />
 
-      <button
-        className="hero-mute-right"
-        onClick={(e) => { e.stopPropagation(); setIsMuted(!isMuted); }}
-        aria-label={isMuted ? 'Unmute trailer' : 'Mute trailer'}
-        title={isMuted ? 'Unmute trailer' : 'Mute trailer'}
-      >
-        <SpeakerIcon isMuted={isMuted} />
-      </button>
+      {/* Mute button: positioned absolutely in the hero so it stays with the hero and is clickable */}
+      {!isModalOpen && mutePos && (
+        <button
+          className="hero-mute-right"
+          onClick={(e) => { e.stopPropagation(); setIsMuted(!isMuted); }}
+          aria-label={isMuted ? 'Unmute trailer' : 'Mute trailer'}
+          title={isMuted ? 'Unmute trailer' : 'Mute trailer'}
+          style={{ position: 'absolute', top: mutePos.top, right: mutePos.right, zIndex: 2000, pointerEvents: 'auto' }}
+        >
+          <SpeakerIcon isMuted={isMuted} />
+        </button>
+      )}
 
       {/* Certification overlay (e.g., PG-13, TV-MA) placed beside the mute button */}
       {(() => {
