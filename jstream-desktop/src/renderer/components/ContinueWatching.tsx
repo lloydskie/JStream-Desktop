@@ -168,15 +168,17 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
   if (!items || items.length === 0) {
     return (
       <section className="continue-row">
-        <h2 className="continue-title">Continue Watching</h2>
-        <div style={{ color: 'var(--muted)', padding: 12 }}>No recent items to continue.</div>
-        <div style={{ padding: 8, color: '#ccc', fontSize: 12 }}>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>Debug — raw recent value:</div>
-          <pre style={{ whiteSpace: 'pre-wrap', color: '#ccc', fontSize: 12 }}>{JSON.stringify(debugRaw || (window as any).__DEV_RECENT_WATCHES || 'no raw data', null, 2)}</pre>
-          <div style={{ fontWeight: 700, marginTop: 8, marginBottom: 6 }}>Debug — normalized recent array:</div>
-          <pre style={{ whiteSpace: 'pre-wrap', color: '#ccc', fontSize: 12 }}>{JSON.stringify(debugNormalized || 'no normalized data', null, 2)}</pre>
-        </div>
-      </section>
+          <h2 className="continue-title">Continue Watching</h2>
+          <div style={{ color: 'var(--muted)', padding: 12 }}>No recent items to continue.</div>
+          {(window as any).__DEV_CONTINUE_WATCHING_DEBUG ? (
+            <div style={{ padding: 8, color: '#ccc', fontSize: 12 }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Debug — raw recent value:</div>
+              <pre style={{ whiteSpace: 'pre-wrap', color: '#ccc', fontSize: 12 }}>{JSON.stringify(debugRaw || (window as any).__DEV_RECENT_WATCHES || 'no raw data', null, 2)}</pre>
+              <div style={{ fontWeight: 700, marginTop: 8, marginBottom: 6 }}>Debug — normalized recent array:</div>
+              <pre style={{ whiteSpace: 'pre-wrap', color: '#ccc', fontSize: 12 }}>{JSON.stringify(debugNormalized || 'no normalized data', null, 2)}</pre>
+            </div>
+          ) : null}
+        </section>
     );
   }
 
