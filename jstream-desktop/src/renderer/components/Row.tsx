@@ -3,6 +3,9 @@ import { createPortal } from 'react-dom';
 import { fetchTMDB } from '../../utils/tmdbClient';
 import RowScroller from './RowScroller';
 
+type PendingOpen = { ownerId: string, fn: () => void | Promise<void> };
+const globalPreviewManager: { open: boolean, closing: boolean, currentOwnerId: string | null, pending: PendingOpen | null } = { open: false, closing: false, currentOwnerId: null, pending: null };
+
 export default function Row({ title, movies, onSelect, onPlay, backdropMode }: { title: string, movies: any[], onSelect?: (id:number, type?:'movie'|'tv')=>void, onPlay?: (id:number, type?:'movie'|'tv')=>void, backdropMode?: boolean }) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [pagerIndex, setPagerIndex] = useState(0);
@@ -15,6 +18,10 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode }: {
   const [hoverLoading, setHoverLoading] = useState(false);
   const hoverTokenRef = useRef(0);
   const previewTimeoutRef = useRef<number | null>(null);
+  const previewOpenTimeoutRef = useRef<number | null>(null);
+  const rowInstanceId = useRef(`row-${Math.random().toString(36).slice(2,8)}`);
+  const previewPendingOwnerRef = useRef<string | null>(null);
+  const previewOwnerIdRef = useRef<string | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewModalPos, setPreviewModalPos] = useState<{left:number,top:number}|null>(null);
   const [previewAnimating, setPreviewAnimating] = useState(false);
@@ -46,6 +53,35 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode }: {
   // global wheel capture handles translation of wheel to scroll; RowScroller attaches native handler
 
   const isTop10 = typeof title === 'string' && title.toLowerCase().includes('top 10');
+
+  // configurable open delay for the mini preview (ms)
+  const PREVIEW_OPEN_DELAY = 250;
+
+  const titleLower = typeof title === 'string' ? title.toLowerCase() : '';
+  const previewable = backdropMode || titleLower.includes('top 10') || titleLower.includes('popular') || titleLower.includes('because you watched') || titleLower.includes('top rated') || titleLower.includes('continue watching');
+
+  function pauseHero() {
+    try {
+      const ctrl = (window as any).__appTrailerController;
+      if (ctrl && typeof ctrl.pause === 'function') ctrl.pause();
+      else window.dispatchEvent(new CustomEvent('app:pause-hero-trailer'));
+    } catch (e) { window.dispatchEvent(new CustomEvent('app:pause-hero-trailer')); }
+  }
+
+  function resumeHero() {
+    try {
+      const ctrl = (window as any).__appTrailerController;
+      if (ctrl && typeof ctrl.resume === 'function') ctrl.resume();
+      else window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
+    } catch (e) { window.dispatchEvent(new CustomEvent('app:resume-hero-trailer')); }
+  }
+
+  React.useEffect(() => {
+    return () => {
+      if (previewTimeoutRef.current) { window.clearTimeout(previewTimeoutRef.current); previewTimeoutRef.current = null; }
+      if (previewOpenTimeoutRef.current) { window.clearTimeout(previewOpenTimeoutRef.current); previewOpenTimeoutRef.current = null; }
+    };
+  }, []);
 
   // Local enriched items including logo/backdrop paths when in backdrop mode
   const [items, setItems] = useState<any[]>(movies || []);
@@ -82,6 +118,160 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode }: {
     })();
     return () => { mounted = false; }
   }, [movies, backdropMode]);
+
+  // Helper to schedule opening the preview for a specific item
+  function scheduleOpen(evt: React.SyntheticEvent, m: any, idx: number) {
+    // cancel any pending close timeout for this row
+    if (previewTimeoutRef.current) { window.clearTimeout(previewTimeoutRef.current); previewTimeoutRef.current = null; }
+    // cancel any previously scheduled open for this item
+    if (previewOpenTimeoutRef.current) { window.clearTimeout(previewOpenTimeoutRef.current); previewOpenTimeoutRef.current = null; previewPendingOwnerRef.current = null; }
+
+    const ownerToken = Date.now() + Math.floor(Math.random() * 1000);
+    const ownerId = `${rowInstanceId.current}:${ownerToken}`;
+    previewPendingOwnerRef.current = ownerId;
+
+    // capture the hovered DOM element immediately — SyntheticEvent will be reused
+    const targetEl = (evt.currentTarget as HTMLElement) || null;
+
+    const doOpen = async () => {
+      try { console.debug('Row preview: doOpen', { title, idx, ownerId }); } catch (e) {}
+      globalPreviewManager.open = true;
+      globalPreviewManager.currentOwnerId = ownerId;
+      previewOwnerIdRef.current = ownerId;
+      hoverTokenRef.current = ownerToken;
+      try {
+        setHoverIndex(idx);
+        setHoverLoading(true);
+        setHoverItem(m);
+        // compute modal position based on captured card rect
+        try {
+          const el = targetEl as HTMLElement | null;
+          const rect = el ? el.getBoundingClientRect() : null;
+          setLastCardRect(rect as any);
+          let centerX = rect ? (rect.left + rect.width / 2) : (window.innerWidth / 2);
+          let centerY = rect ? (rect.top + rect.height / 2) : (window.innerHeight / 2);
+          const TARGET_W = 420;
+          const TARGET_H = 320;
+          const MARGIN = 8;
+          const halfW = TARGET_W / 2;
+          const halfH = TARGET_H / 2;
+          const minX = MARGIN + halfW;
+          const maxX = (window.innerWidth || document.documentElement.clientWidth) - MARGIN - halfW;
+          const minY = MARGIN + halfH;
+          const maxY = (window.innerHeight || document.documentElement.clientHeight) - MARGIN - halfH;
+          if (centerX < minX) centerX = minX;
+          if (centerX > maxX) centerX = maxX;
+          if (centerY < minY) centerY = minY;
+          if (centerY > maxY) centerY = maxY;
+          setPreviewModalPos({ left: centerX, top: centerY });
+          setShowPreviewModal(true);
+          requestAnimationFrame(() => requestAnimationFrame(() => setPreviewAnimating(true)));
+        } catch (e) { /* ignore */ }
+        // pause global hero trailer while preview opens
+        pauseHero();
+
+        const inferred: 'movie'|'tv' = (m._media === 'tv' || m.media_type === 'tv') ? 'tv' : 'movie';
+        try {
+          const [videoResp, detailsResp, imagesResp] = await Promise.all([
+            fetchTMDB(`${inferred}/${m.id}/videos`, { language: 'en-US' }),
+            fetchTMDB(`${inferred}/${m.id}`),
+            fetchTMDB(`${inferred}/${m.id}/images`)
+          ]);
+          const results: any[] = videoResp?.results || [];
+          const typePriority = ['Trailer','Teaser','Featurette','Clip','Behind the Scenes','Bloopers'];
+          let chosen: any = null;
+          for (const t of typePriority) {
+            const candidates = results.filter((v:any) => v.type === t);
+            if (candidates.length === 0) continue;
+            chosen = candidates.find((v:any) => v.official === true) || candidates[0];
+            break;
+          }
+          if (!chosen && results.length > 0) chosen = results[0];
+          if (chosen && (chosen.site || '').toLowerCase() === 'youtube' && chosen.key) setHoverTrailerKey(chosen.key);
+          else setHoverTrailerKey(null);
+          let logoPath: string | null = null;
+          try {
+            const logos = (imagesResp && (imagesResp as any).logos) || [];
+            if (Array.isArray(logos) && logos.length > 0) {
+              const eng = logos.find((l:any) => l.iso_639_1 === 'en') || logos[0];
+              if (eng && eng.file_path) logoPath = eng.file_path;
+            }
+          } catch (e) { }
+          setHoverItem((prev:any) => ({ ...(prev||m), data: detailsResp, backdrop: detailsResp?.backdrop_path || detailsResp?.poster_path || null, logoPath }));
+        } catch (e) {
+          console.error('Row: preview fetch failed', e);
+          setHoverTrailerKey(null);
+        }
+      } finally {
+        setHoverLoading(false);
+      }
+    };
+
+    previewOpenTimeoutRef.current = window.setTimeout(() => {
+      previewOpenTimeoutRef.current = null;
+      if (!globalPreviewManager.open && !globalPreviewManager.closing) {
+        if (globalPreviewManager.pending && globalPreviewManager.pending.ownerId === ownerId) {
+          globalPreviewManager.pending = null;
+        }
+        doOpen();
+      } else {
+        // Immediately swap: close the currently open preview and open the new one now
+        try {
+          // cancel any close timeout for existing preview so it won't reopen/clear state later
+          if (previewTimeoutRef.current) { window.clearTimeout(previewTimeoutRef.current); previewTimeoutRef.current = null; }
+          // cancel any pending fetches for the currently showing preview
+          hoverTokenRef.current++;
+          // hide current modal synchronously
+          setShowPreviewModal(false);
+          setHoverIndex(null);
+          setHoverTrailerKey(null);
+        } catch (e) { /* ignore */ }
+        // reset global manager state and open new preview
+        globalPreviewManager.open = false;
+        globalPreviewManager.currentOwnerId = null;
+        globalPreviewManager.closing = false;
+        // clear any queued pending (we're replacing it)
+        globalPreviewManager.pending = null;
+        doOpen();
+      }
+      previewPendingOwnerRef.current = null;
+    }, PREVIEW_OPEN_DELAY);
+  }
+
+  // Helper to schedule closing the preview for this row/card
+  function scheduleClose(evt: React.SyntheticEvent) {
+    try { console.debug('Row preview: scheduleClose', { title }); } catch (e) {}
+    // cancel any pending open timeout so it doesn't open after leave
+    if (previewOpenTimeoutRef.current) { window.clearTimeout(previewOpenTimeoutRef.current); previewOpenTimeoutRef.current = null; }
+    if (globalPreviewManager.pending && globalPreviewManager.pending.ownerId === previewPendingOwnerRef.current) {
+      globalPreviewManager.pending = null;
+    }
+    previewPendingOwnerRef.current = null;
+    setPreviewAnimating(false);
+    if (globalPreviewManager.currentOwnerId === previewOwnerIdRef.current) {
+      globalPreviewManager.closing = true;
+    }
+    if (previewTimeoutRef.current) { window.clearTimeout(previewTimeoutRef.current); previewTimeoutRef.current = null; }
+    previewTimeoutRef.current = window.setTimeout(() => {
+      hoverTokenRef.current++;
+      setHoverIndex(null);
+      setHoverTrailerKey(null);
+      setShowPreviewModal(false);
+      if (globalPreviewManager.currentOwnerId === previewOwnerIdRef.current) {
+        globalPreviewManager.open = false;
+        globalPreviewManager.currentOwnerId = null;
+      }
+      previewOwnerIdRef.current = null;
+      globalPreviewManager.closing = false;
+        // resume hero when preview fully closed
+        resumeHero();
+      const pending = globalPreviewManager.pending;
+      if (pending) {
+        globalPreviewManager.pending = null;
+        pending.fn();
+      }
+    }, 220);
+  }
   return (
     <div className={`row-container ${isTop10 ? 'top10' : ''}`}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -100,98 +290,25 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode }: {
           </div>
         ) : null}
       </div>
-      <RowScroller scrollerRef={scrollerRef} className={backdropMode ? 'continue-scroll' : 'row-scroll'} disableWheel={isTop10} showPager={false} onPageChange={(idx, count) => { setPagerIndex(idx); setPagerCount(count); }} itemCount={(backdropMode ? items : movies).length} itemsPerPage={5}>
+      <RowScroller scrollerRef={scrollerRef} className={backdropMode ? 'continue-scroll' : 'row-scroll'} disableWheel={true} showPager={false} onPageChange={(idx, count) => { setPagerIndex(idx); setPagerCount(count); }} itemCount={(backdropMode ? items : movies).length} itemsPerPage={5}>
           {(backdropMode ? items : movies).map((m, idx)=> (
-            <div key={m.id} className="movie-item" onFocus={()=>setFocusedIndex(idx)}
-              onMouseEnter={async (e)=>{
-                if (!(isTop10 || backdropMode)) return;
-                if (previewTimeoutRef.current) { window.clearTimeout(previewTimeoutRef.current); previewTimeoutRef.current = null; }
-                const token = ++hoverTokenRef.current;
-                try {
-                  setHoverIndex(idx);
-                  setHoverLoading(true);
-                  setHoverItem(m);
-                  // compute modal position based on card rect
-                  try {
-                    const el = e.currentTarget as HTMLElement;
-                    const rect = el.getBoundingClientRect();
-                    setLastCardRect(rect);
-                    let centerX = rect.left + rect.width / 2;
-                    let centerY = rect.top + rect.height / 2;
-                    const TARGET_W = 420;
-                    const TARGET_H = 320;
-                    const MARGIN = 8;
-                    const halfW = TARGET_W / 2;
-                    const halfH = TARGET_H / 2;
-                    const minX = MARGIN + halfW;
-                    const maxX = (window.innerWidth || document.documentElement.clientWidth) - MARGIN - halfW;
-                    const minY = MARGIN + halfH;
-                    const maxY = (window.innerHeight || document.documentElement.clientHeight) - MARGIN - halfH;
-                    if (centerX < minX) centerX = minX;
-                    if (centerX > maxX) centerX = maxX;
-                    if (centerY < minY) centerY = minY;
-                    if (centerY > maxY) centerY = maxY;
-                    setPreviewModalPos({ left: centerX, top: centerY });
-                    setShowPreviewModal(true);
-                    requestAnimationFrame(() => requestAnimationFrame(() => setPreviewAnimating(true)));
-                  } catch (e) { /* ignore */ }
-
-                  // fetch details and videos for preview
-                  const inferred: 'movie'|'tv' = (m._media === 'tv' || m.media_type === 'tv') ? 'tv' : 'movie';
-                  try {
-                    const [videoResp, detailsResp, imagesResp] = await Promise.all([
-                        fetchTMDB(`${inferred}/${m.id}/videos`, { language: 'en-US' }),
-                        fetchTMDB(`${inferred}/${m.id}`),
-                        fetchTMDB(`${inferred}/${m.id}/images`)
-                      ]);
-                    if (token !== hoverTokenRef.current) return;
-                    const results: any[] = videoResp?.results || [];
-                    const typePriority = ['Trailer','Teaser','Featurette','Clip','Behind the Scenes','Bloopers'];
-                    let chosen: any = null;
-                    for (const t of typePriority) {
-                      const candidates = results.filter((v:any) => v.type === t);
-                      if (candidates.length === 0) continue;
-                      chosen = candidates.find((v:any) => v.official === true) || candidates[0];
-                      break;
-                    }
-                    if (!chosen && results.length > 0) chosen = results[0];
-                    if (chosen && (chosen.site || '').toLowerCase() === 'youtube' && chosen.key) setHoverTrailerKey(chosen.key);
-                    else setHoverTrailerKey(null);
-                    // attach details/backdrop/logo to hoverItem for modal rendering
-                    let logoPath: string | null = null;
-                    try {
-                      const logos = (imagesResp && (imagesResp as any).logos) || [];
-                      if (Array.isArray(logos) && logos.length > 0) {
-                        const eng = logos.find((l:any) => l.iso_639_1 === 'en') || logos[0];
-                        if (eng && eng.file_path) logoPath = eng.file_path;
-                      }
-                    } catch (e) { }
-                    setHoverItem((prev:any) => ({ ...(prev||m), data: detailsResp, backdrop: detailsResp?.backdrop_path || detailsResp?.poster_path || null, logoPath }));
-                  } catch (e) {
-                    console.error('Row: preview fetch failed', e);
-                    setHoverTrailerKey(null);
-                  }
-                } finally {
-                  setHoverLoading(false);
-                }
-              }}
-              onMouseLeave={() => {
-                if (!(typeof title === 'string' && title.toLowerCase().includes('top 10'))) return;
-                setPreviewAnimating(false);
-                previewTimeoutRef.current = window.setTimeout(() => {
-                  hoverTokenRef.current++;
-                  setHoverIndex(null);
-                  setHoverTrailerKey(null);
-                  setShowPreviewModal(false);
-                }, 220);
-              }}
-            >
+            <div key={m.id} className="movie-item" onFocus={()=>setFocusedIndex(idx)}>
               {/* Rank sibling placed outside the card for consistent overflow handling */}
               {typeof title === 'string' && title.toLowerCase().includes('top 10') && (
                 <div className="rank-back" aria-hidden="true">{idx + 1}</div>
               )}
               {backdropMode ? (
-                <div className={`continue-card ${focusedIndex===idx? 'focused-row':''}`} onClick={() => { const inferred: 'movie'|'tv' = (m._media === 'tv' || m.media_type === 'tv') ? 'tv' : 'movie'; if (onSelect) onSelect(m.id, inferred); }} tabIndex={0}>
+                <div className={`continue-card ${focusedIndex===idx? 'focused-row':''}`} onClick={() => { const inferred: 'movie'|'tv' = (m._media === 'tv' || m.media_type === 'tv') ? 'tv' : 'movie'; if (onSelect) onSelect(m.id, inferred); }} tabIndex={0}
+                  onMouseOver={(e)=>{
+                    try { const related = (e.nativeEvent as any).relatedTarget as Node | null; if (related && (e.currentTarget as Node).contains(related)) return; } catch (err) {}
+                      if (!previewable) return;
+                    scheduleOpen(e, m, idx);
+                  }}
+                  onMouseOut={(e)=>{
+                    try { const related = (e.nativeEvent as any).relatedTarget as Node | null; if (related && (e.currentTarget as Node).contains(related)) return; } catch (err) {}
+                    scheduleClose(e);
+                  }}
+                >
                   {m.backdrop ? (
                     <div className="continue-backdrop" style={{ backgroundImage: `url(https://image.tmdb.org/t/p/original${m.backdrop})` }}>
                       {m.logoPath ? (
@@ -210,7 +327,17 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode }: {
                 <div className={`movie-card ${focusedIndex===idx? 'focused-row':''}`} onClick={() => {
                   const inferred: 'movie'|'tv' = (m._media === 'tv' || m.media_type === 'tv') ? 'tv' : 'movie';
                   if (onSelect) onSelect(m.id, inferred);
-                }} tabIndex={0}>
+                }} tabIndex={0}
+                  onMouseOver={(e)=>{
+                    try { const related = (e.nativeEvent as any).relatedTarget as Node | null; if (related && (e.currentTarget as Node).contains(related)) return; } catch (err) {}
+                    if (!previewable) return;
+                    scheduleOpen(e, m, idx);
+                  }}
+                  onMouseOut={(e)=>{
+                    try { const related = (e.nativeEvent as any).relatedTarget as Node | null; if (related && (e.currentTarget as Node).contains(related)) return; } catch (err) {}
+                    scheduleClose(e);
+                  }}
+                >
                   <div className="movie-overlay">
                     <img className="movie-poster" src={m.poster_path ? `https://image.tmdb.org/t/p/w300${m.poster_path}` : undefined} alt={m.title} />
                     <div className="play-overlay" onClick={(ev)=>{ ev.stopPropagation(); const inferred: 'movie'|'tv' = (m._media === 'tv' || m.media_type === 'tv') ? 'tv' : 'movie'; if (onPlay) onPlay(m.id, inferred); }}><div className="play-circle"><div className="play-triangle"/></div></div>
@@ -247,13 +374,35 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode }: {
                     ['--target-w' as any]: '420px',
                     ['--target-h' as any]: '320px'
                   }}
-                  onMouseEnter={() => { if (previewTimeoutRef.current) { window.clearTimeout(previewTimeoutRef.current); previewTimeoutRef.current = null; } setPreviewAnimating(true); }}
+                  onMouseEnter={() => {
+                    if (previewTimeoutRef.current) { window.clearTimeout(previewTimeoutRef.current); previewTimeoutRef.current = null; }
+                    setPreviewAnimating(true);
+                  }}
                   onMouseLeave={() => {
                     setPreviewAnimating(false);
+                    // mark closing to block other opens
+                    if (globalPreviewManager.currentOwnerId === previewOwnerIdRef.current) {
+                      globalPreviewManager.closing = true;
+                    }
+                    if (previewTimeoutRef.current) { window.clearTimeout(previewTimeoutRef.current); previewTimeoutRef.current = null; }
                     previewTimeoutRef.current = window.setTimeout(() => {
                       setShowPreviewModal(false);
                       setHoverIndex(null);
                       setHoverTrailerKey(null);
+                      // clear global owner if we owned it
+                      if (globalPreviewManager.currentOwnerId === previewOwnerIdRef.current) {
+                        globalPreviewManager.open = false;
+                        globalPreviewManager.currentOwnerId = null;
+                      }
+                      previewOwnerIdRef.current = null;
+                      globalPreviewManager.closing = false;
+                      // resume hero when preview fully closed from portal
+                      resumeHero();
+                      const pending = globalPreviewManager.pending;
+                      if (pending) {
+                        globalPreviewManager.pending = null;
+                        pending.fn();
+                      }
                     }, 220);
                   }}
                 >

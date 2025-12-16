@@ -308,7 +308,9 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
         const certRect = certEl.getBoundingClientRect();
         const buttonHeightApprox = 40;
         top = Math.max(8, Math.round((certRect.top - heroRect.top) + (certRect.height - buttonHeightApprox) / 2));
-        left = Math.round((certRect.right - heroRect.left) + 8); // 8px gap to the right of certification
+        // position the mute button to the LEFT of the certification pill
+        const buttonWidthApprox = 44;
+        left = Math.round((certRect.left - heroRect.left) - buttonWidthApprox - 8); // 8px gap to the left of certification
       } else {
         // Fallback: try to mirror hero-actions if present
         const content = heroEl.querySelector('.hero-content') as HTMLElement | null;
@@ -451,12 +453,12 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
       {/* Mute button: positioned absolutely in the hero so it stays with the hero and is clickable */}
       {!isModalOpen && mutePos && (
         <button
-          className="hero-mute-right"
-          onClick={(e) => { e.stopPropagation(); setIsMuted(!isMuted); }}
-          aria-label={isMuted ? 'Unmute trailer' : 'Mute trailer'}
-          title={isMuted ? 'Unmute trailer' : 'Mute trailer'}
-          style={{ position: 'absolute', top: mutePos.top, right: mutePos.right, zIndex: 2000, pointerEvents: 'auto' }}
-        >
+            className="hero-mute-right"
+            onClick={(e) => { e.stopPropagation(); setIsMuted(!isMuted); }}
+            aria-label={isMuted ? 'Unmute trailer' : 'Mute trailer'}
+            title={isMuted ? 'Unmute trailer' : 'Mute trailer'}
+            style={{ position: 'absolute', top: mutePos.top, ...(mutePos.left ? { left: mutePos.left } : { right: mutePos.right }), zIndex: 2000, pointerEvents: 'auto' }}
+          >
           <SpeakerIcon isMuted={isMuted} />
         </button>
       )}
@@ -490,15 +492,7 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
             </span>
             <span>Play</span>
           </button>
-          <button
-            className="add-btn"
-            onClick={async () => { try { await (window as any).database.favoritesAdd(String(movie.id), 'movie'); } catch(e){} }}
-            aria-label={`Add ${movie.title} to my list`}
-            title="Add to my list"
-            style={{ color: 'var(--muted)' }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          </button>
+          {/* add-to-list button removed per design request */}
 
           <button
             className="more-info-btn"

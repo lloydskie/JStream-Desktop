@@ -562,7 +562,7 @@ body{
   /* left-aligned and lower-left placement */
   position: absolute;
   left: 2%;
-  bottom: 8%;
+  bottom: 20%;
   padding: 32px 24px;
   max-width: 720px;
   z-index:2;
@@ -732,7 +732,7 @@ body{
 /* position hero-content at the lower-left of the hero and give it generous padding for wide layout */
 .detail-hero .hero-content{
   position:absolute;
-  bottom:0;
+  bottom:14%;
   left:10%;
   z-index:4;
   pointer-events:auto;
@@ -770,9 +770,9 @@ body{
 .hero-mute-right{
   position: absolute;
   /* shift the mute button inward so the certification pill can sit at the viewport edge */
-  right: calc(var(--app-edge-offset, 2%) + 64px);
+  right: calc(var(--app-edge-offset, 2%) + 24px);
   /* anchor to the hero-content bottom so it sits opposite the hero-actions row */
-  bottom: calc(8% + 32px);
+  bottom: calc(20% + 20px);
   z-index: 12;
   width: 44px;
   height: 44px;
@@ -795,7 +795,7 @@ body{
   /* place at the viewport edge to the right of the mute button */
   /* align to app edge offset; change --app-edge-offset to adjust */
   right: var(--app-edge-offset, 2%);
-  bottom: calc(8% + 32px);
+  bottom: calc(20% + 20px);
   z-index: 13;
   background: rgba(0,0,0,0.56);
   color: #fff;

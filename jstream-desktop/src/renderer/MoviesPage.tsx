@@ -99,7 +99,7 @@ export default function MoviesPage({ genres = [], onSelectMovie, onPlayMovie }: 
               <Button size="sm" variant="ghost" onClick={()=>setSelectedGenre(g.id)}>More</Button>
             </div>
           </div>
-          <RowScroller className="row-scroll">
+          <RowScroller className="row-scroll" disableWheel={true}>
               {loadingMap[g.id] ? (
                 <div style={{padding:12}}><Spinner /></div>
               ) : (
