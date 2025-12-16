@@ -212,46 +212,7 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
 
   // scroller behavior is handled by RowScroller (carousel) below
 
-  // Infinite wrap logic: keep the viewport in the middle copy and wrap when reaching edges
-  React.useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el || items.length === 0) return;
-    const copies = 3;
-    const update = () => {
-      // measure first child width and gap
-      const first = el.querySelector(':scope > *') as HTMLElement | null;
-      const gap = parseFloat(getComputedStyle(el).gap || '0') || 0;
-      const childW = first ? first.getBoundingClientRect().width : 220;
-      const singleSetWidth = (childW + gap) * items.length;
-      // ensure we're centered in the middle copy when items first load
-      if (el.scrollLeft < singleSetWidth * 0.9 || el.scrollLeft > singleSetWidth * 1.1) {
-        try { el.scrollLeft = singleSetWidth; } catch (e) {}
-      }
-    };
-    // initialize after a frame
-    requestAnimationFrame(update);
-    let ticking = false;
-    const onScroll = () => {
-      if (ticking) return;
-      ticking = true;
-      requestAnimationFrame(() => {
-        const first = el.querySelector(':scope > *') as HTMLElement | null;
-        const gap = parseFloat(getComputedStyle(el).gap || '0') || 0;
-        const childW = first ? first.getBoundingClientRect().width : 220;
-        const singleSetWidth = (childW + gap) * items.length;
-        if (el.scrollLeft <= singleSetWidth * 0.2) {
-          // jumped too far to the left — move right by one set
-          el.scrollLeft = el.scrollLeft + singleSetWidth;
-        } else if (el.scrollLeft >= singleSetWidth * (copies - 0.2)) {
-          // jumped too far to the right — move left by one set
-          el.scrollLeft = el.scrollLeft - singleSetWidth;
-        }
-        ticking = false;
-      });
-    };
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => { try { el.removeEventListener('scroll', onScroll); } catch (e) {} };
-  }, [items.length]);
+  // Infinite wrap logic removed: Continue Watching now renders a single set (no infinite carousel).
 
     // Expose a small debug control when a dev flag is set so we can inspect
   // the raw recent data in the running app without modifying the DB.
@@ -304,14 +265,14 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
         </div>
       </div>
       <RowScroller scrollerRef={scrollerRef} className="continue-scroll" showPager={false} disableWheel={true} itemCount={items.length} itemsPerPage={5} onPageChange={(idx, count) => { setPagerIndex(idx); setPagerCount(count); }}>
-        {/** Render repeated copies so the scroll appears infinite — we start in the middle copy and wrap on scroll */}
+        {/** Render items once (infinite carousel disabled) */}
         {(() => {
-          const copies = 3; // number of repeated sets
+          const copies = 1; // single set only
           const out: any[] = [];
           for (let c = 0; c < copies; c++) {
             for (let i = 0; i < items.length; i++) {
               const it = items[i];
-              const key = `${it.type}-${it.id}-copy-${c}-idx-${i}`;
+              const key = `${it.type}-${it.id}-idx-${i}`;
               out.push({ it, key, idx: i });
             }
           }

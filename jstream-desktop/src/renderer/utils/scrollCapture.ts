@@ -22,16 +22,26 @@ export function attachGlobalScrollCapture() {
       let el = document.elementFromPoint(x, y) as HTMLElement | null;
       if (!el) return;
 
+      // If pointer is over the hero banner, don't intercept wheel events here;
+      // allow default page scrolling so users can scroll while hovering the hero.
+      try {
+        const hero = (el && el.closest) ? el.closest('.hero-banner') as HTMLElement | null : null;
+        if (hero) return;
+      } catch (e) { /* ignore */ }
+
+      // Only intercept wheel events when the pointer is over known scroller areas
+      // (carousels/rows/grids). If not over one of these, allow the browser
+      // to perform normal page scrolling.
+      const scrollerAncestor = el.closest && (el.closest('.row-scroll, .continue-scroll, .movie-grid, .detail-sections, .search-dropdown, .row-scroll-wrapper') as HTMLElement | null);
+      if (!scrollerAncestor) {
+        return;
+      }
+
       // Walk up the DOM looking for a scrollable container that can consume the wheel
       while (el && el !== document.documentElement) {
         // Prefer horizontal scrollers (e.g., carousels) if they exist
-        const isRow = el.classList && el.classList.contains && el.classList.contains('row-scroll');
-        if (isRow && isScrollable(el, 'x')) {
-          // translate vertical delta into horizontal scroll
-          el.scrollLeft += ev.deltaY;
-          ev.preventDefault();
-          return;
-        }
+        // Do not translate vertical wheel into horizontal scrolling here.
+        // Horizontal scroll should be controlled only by the row's left/right buttons.
 
         // If vertical scrollable and deltaY present
         if (Math.abs(ev.deltaY) > Math.abs(ev.deltaX) && isScrollable(el, 'y')) {

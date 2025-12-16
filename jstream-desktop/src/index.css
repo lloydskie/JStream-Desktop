@@ -14,6 +14,8 @@
   --poster-large: 300px;
   --card-extra-height: 64px; /* approximate movie-info + padding height to match full card */
   --movie-card-width: 200px; /* default card width used in rows, override if row sizing changes */
+  /* width of the overlay scroll buttons; used to align snap positions to button edges */
+  --scroller-button-width: 96px;
 }
 
 /* Ensure the portal header root is fixed to the top so the navbar stays at the top of the viewport */
@@ -412,14 +414,15 @@ body{
   pointer-events: none;
 }
 .row-page-indicator .page-count{ font-size:12px; color:var(--muted); }
-.row-page-indicator .dots{ display:flex; gap:6px; }
-.row-page-indicator .dot{ width:8px; height:8px; border-radius:999px; background: rgba(255,255,255,0.06); opacity:0.45; transition: transform 120ms ease, background 120ms ease, opacity 120ms ease; }
+.row-page-indicator .dots{ display:flex; gap:4px; }
+.row-page-indicator .dot{ width:8px; height:8px; border-radius:999px; background: rgba(255,255,255,0.12); opacity:0.65; transition: transform 120ms ease, background 120ms ease, opacity 120ms ease; }
 .row-page-indicator .dot.active{ background: rgba(255,255,255,0.88); opacity:1; transform: translateY(-1px); }
 
 /* Inline page indicator placed opposite the row title */
-.row-page-indicator-inline{ display:flex; align-items:center; gap:8px }
+.row-page-indicator-inline{ display:flex; align-items:center; gap:4px }
 .row-page-indicator-inline .bar-list{ display:flex; gap:1px; align-items:center }
-.row-page-indicator-inline .bar{ color: rgba(255,255,255,0.06); opacity: 0.45; transition: color 160ms ease, opacity 160ms ease, transform 120ms ease; }
+.row-page-indicator-inline .bar{ color: rgba(255,255,255,0.12); opacity: 0.65; transition: color 160ms ease, opacity 160ms ease, transform 120ms ease; height: 4px; width: 28px; }
+.row-page-indicator-inline .bar svg, .row-page-indicator-inline .bar > svg { height: 4px; width: 28px; }
 .row-page-indicator-inline .bar.active{ color: rgba(255,255,255,0.88); opacity: 1; transform: translateY(-1px); }
 .row-page-indicator-inline .bar:not(.active){ filter: none; }
 
@@ -598,6 +601,23 @@ body{
 .continue-scroll{ display:flex; gap:12px; overflow-x:auto; overflow-y:visible; padding:8px 8px 0; align-items:flex-start; height: auto !important; max-height: none !important; /* ensure row shrinks to content */ }
 .continue-scroll > * { align-self: flex-start; }
 
+/* Enable snap pagination for Continue Watching row (non-wrapping) */
+.continue-scroll {
+  /* Snap to item start so items align with the scroll-button edges */
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  /* keep the snapped item offset from the viewport edge by the overlay button width */
+  scroll-padding-inline-start: var(--scroller-button-width);
+  scroll-padding-inline-end: var(--scroller-button-width);
+  /* add padding so the first/last items don't sit under the overlay buttons */
+  padding-left: calc(8px + var(--scroller-button-width));
+  padding-right: calc(8px + var(--scroller-button-width));
+}
+.continue-scroll > * {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
 /* Scroll control buttons overlayed on the row */
 .continue-scroll-button{
   position: absolute;
@@ -629,6 +649,8 @@ body{
 @media (max-width: 900px) {
   /* On smaller screens keep overlays reasonably sized but still flush to edge */
   .continue-scroll-button{ width:64px }
+  /* smaller button width for snapping on narrow viewports */
+  :root { --scroller-button-width: 64px; }
   .hero-overview{ font-size:14px; line-height:1.4 }
   .hero-title{ font-size:28px }
   .continue-scroll-button svg{ width:24px; height:24px }
@@ -637,6 +659,8 @@ body{
 @media (min-width: 1400px) {
   /* On very wide viewports, extend overlays further so they visually reach the viewport edge */
   .continue-scroll-button{ width:140px }
+  /* wider overlay button on very wide screens — update snapping offset accordingly */
+  :root { --scroller-button-width: 140px; }
 }
 
 /* Show scroll buttons by default; only hide when disabled (no scroll available). */
@@ -1025,8 +1049,7 @@ select.search-input, select.input{ min-width: 64px }
 
 /* Force overlay above all app content (including transformed stacking contexts) */
 .preview-modal-overlay{ z-index: 2147483647 !important; }
-.preview-open .continue-row, .preview-open .continue-scroll-wrapper, .preview-open .continue-scroll { overflow: visible !important; }
-.preview-open .continue-row { z-index: 10; }
+.preview-open .continue-row { overflow: visible !important; z-index: 10; }
 .preview-open .continue-card { z-index: 5; }
 .preview-backdrop{ flex:0 0 60%; background-size:cover; background-position:center; position:relative }
 .preview-iframe{ position:absolute; inset:0; width:100%; height:100%; border:0 }
@@ -1279,6 +1302,24 @@ select.search-input, select.input{ min-width: 64px }
 }
 
 .row-scroll{ padding-left: 6px !important; padding-right: 6px !important }
+
+/* Universal scroller snapping: align item starts to the inner edge of the overlay scroll buttons.
+   This makes the left/right scroll buttons behave as page edges and ensures focused
+   items line up neatly beside the buttons. */
+.row-scroll, .continue-scroll {
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  scroll-padding-inline-start: var(--scroller-button-width);
+  scroll-padding-inline-end: var(--scroller-button-width);
+  /* keep a small gutter plus the overlay button width so content doesn't sit under buttons */
+  padding-left: calc(6px + var(--scroller-button-width)) !important;
+  padding-right: calc(6px + var(--scroller-button-width)) !important;
+}
+
+.row-scroll > .movie-item, .row-scroll > * , .continue-scroll > * {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
 
 
 @media (max-width: 800px) {
