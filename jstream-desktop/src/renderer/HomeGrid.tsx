@@ -170,7 +170,7 @@ export default function HomeGrid({ onSelectMovie, onPlayMovie, selectedTmdbId, s
       <div className="app-shell">
         {loading && <Spinner />}
 
-        <Row title="Top 10" movies={top10} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />
+        <Row title="Top 10 Movies in the Philippines Today" movies={top10} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />
         <Row title="Popular on JStream" movies={popular} backdropMode={true} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />
         {becauseYouWatched.length > 0 && <Row title={lastSelectedTitle ? `Because you watched ${lastSelectedTitle}` : 'Because you watched'} movies={becauseYouWatched} backdropMode={true} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />}
         <Row title="Top Rated" movies={topRated} backdropMode={true} onSelect={onSelectMovie || (()=>{})} onPlay={onPlayMovie || (()=>{})} />

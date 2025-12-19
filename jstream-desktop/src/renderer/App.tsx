@@ -15,6 +15,7 @@ import AnimePage from './AnimePage';
 import CollectionsPage from './CollectionsPage';
 import PersonPage from './PersonPage';
 import ContinueWatching from './components/ContinueWatching';
+import TopSearches from './components/TopSearches';
 import HeroBanner from './components/HeroBanner';
 import { useState, useEffect } from 'react';
 // search UI removed from header per request
@@ -297,6 +298,7 @@ export default function App() {
             </div>
           ) : null}
           {activeIndex === 0 && <ContinueWatching onPlay={handlePlayMovie} onSelect={handleSelectMovie} />}
+          {activeIndex === 0 && <TopSearches onPlay={handlePlayMovie} onSelect={handleSelectMovie} />}
             <div className="app-shell" aria-hidden={playerModalOpen} style={playerModalOpen ? { pointerEvents: 'none' } : undefined}>
               <TabPanels style={{width: '100%', padding: 0}}>
                 <TabPanel sx={{padding: 0}}><HomeGrid onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedTmdbId={selectedTmdbId} selectedGenre={selectedGenre} isModalOpen={playerModalOpen} onSetFeatured={setFeaturedMovie} /></TabPanel>

@@ -22,6 +22,7 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode }: {
   const rowInstanceId = useRef(`row-${Math.random().toString(36).slice(2,8)}`);
   const previewPendingOwnerRef = useRef<string | null>(null);
   const previewOwnerIdRef = useRef<string | null>(null);
+  const hoverTargetIdRef = useRef<string | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewModalPos, setPreviewModalPos] = useState<{left:number,top:number}|null>(null);
   const [previewAnimating, setPreviewAnimating] = useState(false);
@@ -139,8 +140,13 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode }: {
       globalPreviewManager.currentOwnerId = ownerId;
       previewOwnerIdRef.current = ownerId;
       hoverTokenRef.current = ownerToken;
-      try {
-        setHoverIndex(idx);
+        try {
+          // remember which element opened the preview so modal can follow it
+          hoverTargetIdRef.current = ownerId;
+          const elTarget = targetEl as HTMLElement | null;
+          if (elTarget) elTarget.setAttribute('data-preview-target', ownerId);
+
+          setHoverIndex(idx);
         setHoverLoading(true);
         setHoverItem(m);
         // compute modal position based on captured card rect
@@ -257,6 +263,14 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode }: {
       setHoverIndex(null);
       setHoverTrailerKey(null);
       setShowPreviewModal(false);
+      // clear hover target if set
+      try {
+        const id = hoverTargetIdRef.current;
+        if (id) {
+          const el = document.querySelector(`[data-preview-target="${id}"]`) as HTMLElement | null;
+          if (el) el.removeAttribute('data-preview-target');
+        }
+      } catch (e) { }
       if (globalPreviewManager.currentOwnerId === previewOwnerIdRef.current) {
         globalPreviewManager.open = false;
         globalPreviewManager.currentOwnerId = null;
@@ -272,6 +286,54 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode }: {
       }
     }, 220);
   }
+
+  // Update modal position to follow source card when scrolling/resizing
+  useEffect(() => {
+    let raf: any = 0;
+    function updatePos() {
+      const id = hoverTargetIdRef.current;
+      if (!id) return;
+      const el = document.querySelector(`[data-preview-target="${id}"]`) as HTMLElement | null;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const TARGET_W = 420;
+      const TARGET_H = 320;
+      const MARGIN = 8;
+      const halfW = TARGET_W / 2;
+      const halfH = TARGET_H / 2;
+      const minX = MARGIN + halfW;
+      const maxX = (window.innerWidth || document.documentElement.clientWidth) - MARGIN - halfW;
+      const minY = MARGIN + halfH;
+      const maxY = (window.innerHeight || document.documentElement.clientHeight) - MARGIN - halfH;
+      let x = centerX;
+      let y = centerY;
+      if (x < minX) x = minX;
+      if (x > maxX) x = maxX;
+      if (y < minY) y = minY;
+      if (y > maxY) y = maxY;
+      setPreviewModalPos({ left: x, top: y });
+    }
+    function onScrollOrResize() {
+      if (!showPreviewModal) return;
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(updatePos);
+    }
+    if (showPreviewModal) {
+      window.addEventListener('scroll', onScrollOrResize, { passive: true });
+      window.addEventListener('resize', onScrollOrResize);
+      const scrollerEl = scrollerRef.current as HTMLElement | null;
+      if (scrollerEl && scrollerEl.addEventListener) scrollerEl.addEventListener('scroll', onScrollOrResize, { passive: true });
+      updatePos();
+      return () => {
+        if (raf) cancelAnimationFrame(raf);
+        window.removeEventListener('scroll', onScrollOrResize as any);
+        window.removeEventListener('resize', onScrollOrResize as any);
+        if (scrollerEl && scrollerEl.removeEventListener) scrollerEl.removeEventListener('scroll', onScrollOrResize as any);
+      };
+    }
+  }, [showPreviewModal]);
   return (
     <div className={`row-container ${isTop10 ? 'top10' : ''}`}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

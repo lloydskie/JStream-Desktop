@@ -18,6 +18,7 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
   const hoverTokenRef = useRef<number>(0);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewModalPos, setPreviewModalPos] = useState<{left:number,top:number}|null>(null);
+  const hoverTargetIdRef = useRef<string | null>(null);
   const previewTimeoutRef = useRef<number | null>(null);
   const [previewAnimating, setPreviewAnimating] = useState(false);
   const [lastCardRect, setLastCardRect] = useState<DOMRect | null>(null);
@@ -214,6 +215,54 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
 
   // Infinite wrap logic removed: Continue Watching now renders a single set (no infinite carousel).
 
+  // Update modal position to follow the source card when page/row scrolls or resizes
+  useEffect(() => {
+    let raf: any = 0;
+    function updatePos() {
+      const id = hoverTargetIdRef.current;
+      if (!id) return;
+      const el = document.querySelector(`[data-preview-target="${id}"]`) as HTMLElement | null;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const TARGET_W = 420;
+      const TARGET_H = 320;
+      const MARGIN = 8;
+      const halfW = TARGET_W / 2;
+      const halfH = TARGET_H / 2;
+      const minX = MARGIN + halfW;
+      const maxX = (window.innerWidth || document.documentElement.clientWidth) - MARGIN - halfW;
+      const minY = MARGIN + halfH;
+      const maxY = (window.innerHeight || document.documentElement.clientHeight) - MARGIN - halfH;
+      let x = centerX;
+      let y = centerY;
+      if (x < minX) x = minX;
+      if (x > maxX) x = maxX;
+      if (y < minY) y = minY;
+      if (y > maxY) y = maxY;
+      setPreviewModalPos({ left: x, top: y });
+    }
+    function onScrollOrResize() {
+      if (!showPreviewModal) return;
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(updatePos);
+    }
+    if (showPreviewModal) {
+      window.addEventListener('scroll', onScrollOrResize, { passive: true });
+      window.addEventListener('resize', onScrollOrResize);
+      const scrollerEl = scrollerRef.current as HTMLElement | null;
+      if (scrollerEl && scrollerEl.addEventListener) scrollerEl.addEventListener('scroll', onScrollOrResize, { passive: true });
+      updatePos();
+      return () => {
+        if (raf) cancelAnimationFrame(raf);
+        window.removeEventListener('scroll', onScrollOrResize as any);
+        window.removeEventListener('resize', onScrollOrResize as any);
+        if (scrollerEl && scrollerEl.removeEventListener) scrollerEl.removeEventListener('scroll', onScrollOrResize as any);
+      };
+    }
+  }, [showPreviewModal]);
+
     // Expose a small debug control when a dev flag is set so we can inspect
   // the raw recent data in the running app without modifying the DB.
   function renderDebugDump() {
@@ -283,6 +332,11 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
               if (previewTimeoutRef.current) { window.clearTimeout(previewTimeoutRef.current); previewTimeoutRef.current = null; }
               const token = ++hoverTokenRef.current;
               try {
+                // remember which element opened the preview so modal can follow it when scrolling
+                const key = `${entry.it.type}-${entry.it.id}-idx-${entry.idx}`;
+                hoverTargetIdRef.current = key;
+                const elCur = e.currentTarget as HTMLElement | null;
+                if (elCur) elCur.setAttribute('data-preview-target', key);
                 setHoverIndex(entry.idx);
                 setHoverLoading(true);
                 // compute modal position (fixed) above the card if possible
@@ -365,6 +419,14 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
                   if (ctrl && typeof ctrl.resume === 'function') ctrl.resume();
                   else window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
                 } catch (e) { window.dispatchEvent(new CustomEvent('app:resume-hero-trailer')); }
+                // clear hover target
+                try {
+                  const id = hoverTargetIdRef.current;
+                  if (id) {
+                    const el = document.querySelector(`[data-preview-target="${id}"]`) as HTMLElement | null;
+                    if (el) el.removeAttribute('data-preview-target');
+                  }
+                } catch (e) {}
               }, 220);
             }}
           >
