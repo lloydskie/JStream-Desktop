@@ -46,7 +46,17 @@ export function buildVideasyUrl(config: any, type: "movie" | "tv", params: Recor
     if (params && params.progress) url += `&progress=${params.progress}`;
   }
   if (type === "tv") {
-    url = `${config.tvBaseUrl}${params.tmdbId}/${params.season}/${params.episode}?color=${color}`;
+    // If a specific season/episode are provided and look numeric, include them in the path.
+    // Otherwise fall back to a show-level URL that allows the player to present an episode selector.
+    const seasonRaw = params && (params.season as any);
+    const episodeRaw = params && (params.episode as any);
+    const seasonNum = seasonRaw == null ? null : Number(seasonRaw);
+    const episodeNum = episodeRaw == null ? null : Number(episodeRaw);
+    if (seasonNum != null && !Number.isNaN(seasonNum) && episodeNum != null && !Number.isNaN(episodeNum)) {
+      url = `${config.tvBaseUrl}${params.tmdbId}/${seasonNum}/${episodeNum}?color=${color}`;
+    } else {
+      url = `${config.tvBaseUrl}${params.tmdbId}?color=${color}`;
+    }
     if (wantOverlay) url += "&overlay=true";
     if ((params && params.nextEpisode) || false) url += "&nextEpisode=true";
     if (wantEpisodeSelector) url += "&episodeSelector=true";

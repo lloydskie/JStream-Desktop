@@ -5,7 +5,7 @@ import PlusMinusIcon from './icons/PlusMinusIcon';
 import InfoIcon from './icons/InfoIcon';
 import SpeakerIcon from './icons/SpeakerIcon';
 
-export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOpen, isVisible = true }: { movie?: any, onPlay?: (id:number, type?:'movie'|'tv')=>void, onMore?: (id:number, type?:'movie'|'tv')=>void, fullBleed?: boolean, isModalOpen?: boolean, isVisible?: boolean }) {
+export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOpen, isVisible = true, mediaType = 'movie' }: { movie?: any, onPlay?: (id:number, type?:'movie'|'tv')=>void, onMore?: (id:number, type?:'movie'|'tv')=>void, fullBleed?: boolean, isModalOpen?: boolean, isVisible?: boolean, mediaType?: 'movie'|'tv' }) {
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [trailerError, setTrailerError] = useState<string | null>(null);
 
@@ -55,7 +55,7 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
 
     async function loadTrailer() {
       try {
-        const data = await fetchTMDB(`movie/${movie.id}/videos`, { language: 'en-US' });
+        const data = await fetchTMDB(`${mediaType}/${movie.id}/videos`, { language: 'en-US' });
         console.debug('HeroBanner: TMDb videos response', data);
         if (!mounted) return;
         const results: any[] = data?.results || [];
@@ -117,7 +117,7 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
   const heroRef = useRef<HTMLElement | null>(null);
   const [mutePos, setMutePos] = useState<{ top: number; right?: number; left?: number } | null>(null);
 
-  // logo URL state — we'll attempt to fetch logos from TMDb images endpoint
+  // logo URL state — attempt to fetch images from the appropriate endpoint and fallback
   const [logoUrl, setLogoUrl] = useState<string | null>(movie?.logo_path ? `https://image.tmdb.org/t/p/original${movie.logo_path}` : null);
 
   useEffect(() => {
@@ -125,22 +125,22 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
     async function loadLogos() {
       try {
         if (!movie?.id) return;
-        // try movie images first
-        const imgResp = await fetchTMDB(`movie/${movie.id}/images`);
+        // try primary mediaType images first
+        const imgResp = await fetchTMDB(`${mediaType}/${movie.id}/images`);
         const logos = (imgResp && (imgResp as any).logos) || [];
         if (mounted && logos.length > 0) {
-          // prefer a logo with english iso_639_1 or fallback to first
           const eng = logos.find((l:any) => l.iso_639_1 === 'en') || logos[0];
           if (eng?.file_path) {
             setLogoUrl(`https://image.tmdb.org/t/p/original${eng.file_path}`);
             return;
           }
         }
-        // fallback: try tv images endpoint (some items may be tv)
-        const tvResp = await fetchTMDB(`tv/${movie.id}/images`);
-        const tvLogos = (tvResp && (tvResp as any).logos) || [];
-        if (mounted && tvLogos.length > 0) {
-          const eng = tvLogos.find((l:any) => l.iso_639_1 === 'en') || tvLogos[0];
+        // fallback: try the other type's images
+        const fallbackType = mediaType === 'movie' ? 'tv' : 'movie';
+        const fbResp = await fetchTMDB(`${fallbackType}/${movie.id}/images`);
+        const fbLogos = (fbResp && (fbResp as any).logos) || [];
+        if (mounted && fbLogos.length > 0) {
+          const eng = fbLogos.find((l:any) => l.iso_639_1 === 'en') || fbLogos[0];
           if (eng?.file_path) {
             setLogoUrl(`https://image.tmdb.org/t/p/original${eng.file_path}`);
             return;
@@ -152,7 +152,7 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
     }
     loadLogos();
     return () => { mounted = false; };
-  }, [movie?.id]);
+  }, [movie?.id, mediaType]);
 
   // when trailerKey appears, consider trailer 'playing' after a short delay and collapse overview
   useEffect(() => {
@@ -381,33 +381,31 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
       if (!movie?.id) return;
       try {
         // Try movie release_dates
-        const rd = await fetchTMDB(`movie/${movie.id}/release_dates`);
-        console.debug('HeroBanner: fetched release_dates ->', rd);
-        const results = rd && rd.results;
-        if (Array.isArray(results) && results.length > 0) {
-          const preferred = results.find((r:any) => r.iso_3166_1 === 'US') || results[0];
-          const rels = preferred && preferred.release_dates;
-          if (Array.isArray(rels) && rels.length > 0) {
-            const byCert = rels.find((d:any) => d.certification && d.certification.trim());
-            const cert = (byCert && byCert.certification) || rels[0].certification;
-            if (cert && mounted) { setResolvedCert(cert); return; }
+        if (mediaType === 'movie') {
+          const rd = await fetchTMDB(`movie/${movie.id}/release_dates`);
+          console.debug('HeroBanner: fetched release_dates ->', rd);
+          const results = rd && rd.results;
+          if (Array.isArray(results) && results.length > 0) {
+            const preferred = results.find((r:any) => r.iso_3166_1 === 'US') || results[0];
+            const rels = preferred && preferred.release_dates;
+            if (Array.isArray(rels) && rels.length > 0) {
+              const byCert = rels.find((d:any) => d.certification && d.certification.trim());
+              const cert = (byCert && byCert.certification) || rels[0].certification;
+              if (cert && mounted) { setResolvedCert(cert); return; }
+            }
+          }
+        } else {
+          // tv: try content_ratings first
+          const cr = await fetchTMDB(`tv/${movie.id}/content_ratings`);
+          console.debug('HeroBanner: fetched content_ratings ->', cr);
+          const cresults = cr && cr.results;
+          if (Array.isArray(cresults) && cresults.length > 0) {
+            const pref = cresults.find((r:any) => r.iso_3166_1 === 'US') || cresults[0];
+            if (pref && pref.rating && mounted) { setResolvedCert(pref.rating); return; }
           }
         }
       } catch (e) {
-        console.debug('HeroBanner: release_dates fetch failed', e);
-        // ignore and try tv endpoint next
-      }
-      try {
-        // Try tv content_ratings
-        const cr = await fetchTMDB(`tv/${movie.id}/content_ratings`);
-        console.debug('HeroBanner: fetched content_ratings ->', cr);
-        const cresults = cr && cr.results;
-        if (Array.isArray(cresults) && cresults.length > 0) {
-          const pref = cresults.find((r:any) => r.iso_3166_1 === 'US') || cresults[0];
-          if (pref && pref.rating && mounted) { setResolvedCert(pref.rating); return; }
-        }
-      } catch (e) {
-        console.debug('HeroBanner: content_ratings fetch failed', e);
+        console.debug('HeroBanner: certification fetch failed', e);
         // ignore
       }
     }
@@ -484,7 +482,7 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
           <div className="hero-trailer-fallback" role="status">Trailer unavailable</div>
         )}
           <div className="hero-actions">
-          <button className="play-cta" onClick={() => onPlay && onPlay(movie.id, 'movie')}>
+          <button className="play-cta" onClick={() => onPlay && onPlay(movie.id, mediaType)}>
             <span className="play-icon" aria-hidden="true">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                 <path d="M5 3.868v16.264A1 1 0 0 0 6.553 21.2l12.894-8.132a1 1 0 0 0 0-1.736L6.553 2.8A1 1 0 0 0 5 3.868z" fill="#fff"/>
@@ -496,7 +494,7 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
 
           <button
             className="more-info-btn"
-            onClick={() => onMore && onMore(movie.id, 'movie')}
+            onClick={() => onMore && onMore(movie.id, mediaType)}
             aria-label={`More info ${movie.title}`}
             title={`More info ${movie.title}`}
           >

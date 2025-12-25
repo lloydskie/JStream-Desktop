@@ -1,12 +1,26 @@
 import React, { useEffect, useState, useRef } from 'react';
-import RowScroller from './components/RowScroller';
+import Row from './components/Row';
 import { Box, Button, Spinner } from '@chakra-ui/react';
 import { fetchTMDB } from '../utils/tmdbClient';
+import HeroBanner from './components/HeroBanner';
 
 export default function MoviesPage({ genres = [], onSelectMovie, onPlayMovie }: { genres?: any[], onSelectMovie?: (id:number, type?:'movie'|'tv')=>void, onPlayMovie?: (id:number|string, type?:'movie'|'tv', params?:Record<string,any>)=>void }) {
   const [overview, setOverview] = useState<Record<number, any[]>>({});
   const [loadingMap, setLoadingMap] = useState<Record<number, boolean>>({});
   const [selectedGenre, setSelectedGenre] = useState<number | null>(null);
+  const [featured, setFeatured] = useState<any|null>(null);
+
+  useEffect(() => {
+    // fetch a featured movie for the hero (first popular)
+    (async () => {
+      try {
+        const pop = await fetchTMDB('movie/popular');
+        setFeatured((pop && pop.results && pop.results[0]) || null);
+      } catch (e) {
+        // ignore
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     // Strict dedupe + fill: fetch pages per-genre and allocate unique items across all genre rows
@@ -91,38 +105,24 @@ export default function MoviesPage({ genres = [], onSelectMovie, onPlayMovie }: 
 
   return (
     <Box>
+      {/* Hero that mirrors Home behavior but for movies */}
+      {featured && <HeroBanner movie={featured} onPlay={onPlayMovie} onMore={(id)=> onSelectMovie && onSelectMovie(id, 'movie')} mediaType="movie" fullBleed isVisible={true} />}
+
       {(genres || []).map((g:any)=> (
         <section key={g.id} style={{marginBottom:20}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-            <h3 style={{margin:0,fontSize:18,fontWeight:700}}>{g.name}</h3>
-            <div>
-              <Button size="sm" variant="ghost" onClick={()=>setSelectedGenre(g.id)}>More</Button>
-            </div>
-          </div>
-          <RowScroller className="row-scroll" disableWheel={true}>
-              {loadingMap[g.id] ? (
-                <div style={{padding:12}}><Spinner /></div>
-              ) : (
-                (() => {
-                  const list = overview[g.id] || [];
-                  if (!list || list.length === 0) return <div style={{color:'var(--muted)', padding:12}}>No popular movies found for this genre.</div>;
-                  return list.slice(0,12).map((m:any)=> (
-                    <div key={m.id} className="movie-card small" tabIndex={0} role="button" onClick={()=> onSelectMovie && onSelectMovie(m.id, 'movie')}>
-                      <div className="movie-overlay">
-                        <img className="movie-poster" src={m.poster_path ? `https://image.tmdb.org/t/p/w300${m.poster_path}` : undefined} alt={m.title} />
-                        <div className="play-overlay" onClick={(ev)=>{ ev.stopPropagation(); if (onPlayMovie) onPlayMovie(m.id, 'movie', { tmdbId: m.id }); }}>
-                          <div className="play-circle"><div className="play-triangle"/></div>
-                        </div>
-                      </div>
-                      <div className="movie-info">
-                        <div style={{fontSize:13,fontWeight:700}}>{m.title}</div>
-                        <div style={{fontSize:12,color:'var(--muted)'}}>{m.release_date}</div>
-                      </div>
-                    </div>
-                  ));
-                })()
-              )}
-          </RowScroller>
+          {loadingMap[g.id] ? (
+            <div style={{padding:12}}><Spinner /></div>
+          ) : (
+            (() => {
+              const list = overview[g.id] || [];
+              if (!list || list.length === 0) return <div style={{color:'var(--muted)', padding:12}}>No popular movies found for this genre.</div>;
+              // Normalize movie items to include `title` and `media_type` so `Row` can fetch logos
+              const normalized = list.slice(0,12).map((m:any) => ({ ...m, title: m.title || m.name, media_type: 'movie' }));
+              return (
+                <Row title={g.name} movies={normalized} onSelect={onSelectMovie} onPlay={onPlayMovie} backdropMode={true} onExplore={() => setSelectedGenre(g.id)} />
+              );
+            })()
+          )}
         </section>
       ))}
     </Box>
@@ -206,3 +206,4 @@ function GenreView({ genreId, genreName, onBack, onSelectMovie, onPlayMovie }: {
     </Box>
   );
 }
+

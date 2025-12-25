@@ -6,8 +6,10 @@ import RowScroller from './RowScroller';
 type PendingOpen = { ownerId: string, fn: () => void | Promise<void> };
 const globalPreviewManager: { open: boolean, closing: boolean, currentOwnerId: string | null, pending: PendingOpen | null } = { open: false, closing: false, currentOwnerId: null, pending: null };
 
-export default function Row({ title, movies, onSelect, onPlay, backdropMode }: { title: string, movies: any[], onSelect?: (id:number, type?:'movie'|'tv')=>void, onPlay?: (id:number, type?:'movie'|'tv')=>void, backdropMode?: boolean }) {
+export default function Row({ title, movies, onSelect, onPlay, backdropMode, onExplore }: { title: string, movies: any[], onSelect?: (id:number, type?:'movie'|'tv')=>void, onPlay?: (id:number, type?:'movie'|'tv')=>void, backdropMode?: boolean, onExplore?: ()=>void }) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  const [rowVisible, setRowVisible] = useState(false);
   const [pagerIndex, setPagerIndex] = useState(0);
   const [pagerCount, setPagerCount] = useState(0);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
@@ -87,7 +89,35 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode }: {
   // Local enriched items including logo/backdrop paths when in backdrop mode
   const [items, setItems] = useState<any[]>(movies || []);
 
+  // Simple cache for logo paths persisted in sessionStorage so reloads keep the cache
+  // Key: `${type}:${id}` -> file_path string
+  const LOGO_CACHE_KEY = 'jstream:logo_cache_v1';
+  const logoCacheRef = (React as any).useRef<Map<string,string>>(new Map()).current as Map<string,string>;
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(LOGO_CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        for (const k of Object.keys(parsed || {})) {
+          try { logoCacheRef.set(k, parsed[k]); } catch (e) { /* ignore */ }
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, []);
+
+  function persistLogoCache() {
+    try {
+      const obj: Record<string,string> = {};
+      for (const [k, v] of Array.from(logoCacheRef.entries())) obj[k] = v;
+      sessionStorage.setItem(LOGO_CACHE_KEY, JSON.stringify(obj));
+    } catch (e) { /* ignore */ }
+  }
+
   // When movies prop changes or backdropMode toggles, attempt to enrich items with logo images
+  // But only perform enrichment when the row is visible to the user to avoid spamming TMDb with background requests.
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -96,29 +126,50 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode }: {
         if (mounted) setItems(base);
         return;
       }
+      // If row isn't visible yet, just set base items and wait for visibility to trigger enrichment
+      if (!rowVisible) {
+        if (mounted) setItems(base);
+        return;
+      }
       try {
-        const enriched = await Promise.all(base.map(async (it) => {
+        const enriched: any[] = [];
+        // Sequentially fetch logos to limit concurrency and reduce burst load
+        for (const it of base) {
+          if (!mounted) break;
+          const copy = { ...it };
+          if (copy.logoPath) { enriched.push(copy); continue; }
+          const inferred: 'movie'|'tv' = (copy._media === 'tv' || copy.media_type === 'tv') ? 'tv' : 'movie';
+          const cacheKey = `${inferred}:${copy.id}`;
+          if (logoCacheRef.has(cacheKey)) {
+            copy.logoPath = logoCacheRef.get(cacheKey) || null;
+            enriched.push(copy);
+            continue;
+          }
           try {
-            if (it.logoPath) return it;
-            const inferred: 'movie'|'tv' = (it._media === 'tv' || it.media_type === 'tv') ? 'tv' : 'movie';
-            const images = await fetchTMDB(`${inferred}/${it.id}/images`);
+            const images = await fetchTMDB(`${inferred}/${copy.id}/images`);
             const logos = (images && (images as any).logos) || [];
             if (Array.isArray(logos) && logos.length > 0) {
               const eng = logos.find((l:any) => l.iso_639_1 === 'en') || logos[0];
-              if (eng && eng.file_path) it.logoPath = eng.file_path;
+              if (eng && eng.file_path) {
+                copy.logoPath = eng.file_path;
+                logoCacheRef.set(cacheKey, eng.file_path);
+                try { persistLogoCache(); } catch (e) { /* ignore */ }
+              }
             }
           } catch (e) {
             // ignore per-item image fetch errors
           }
-          return it;
-        }));
+          enriched.push(copy);
+          // small delay to yield to paint and avoid hogging network
+          await new Promise(r => setTimeout(r, 40));
+        }
         if (mounted) setItems(enriched);
       } catch (e) {
         if (mounted) setItems(base);
       }
     })();
     return () => { mounted = false; }
-  }, [movies, backdropMode]);
+  }, [movies, backdropMode, rowVisible]);
 
   // Helper to schedule opening the preview for a specific item
   function scheduleOpen(evt: React.SyntheticEvent, m: any, idx: number) {
@@ -334,10 +385,53 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode }: {
       };
     }
   }, [showPreviewModal]);
+  // Observe when this row enters the viewport so we can lazily enrich images
+  useEffect(() => {
+    const el = rowRef.current;
+    if (!el) return;
+    // Immediate visibility check: if the row is within the viewport now, mark visible
+    try {
+      const rect = el.getBoundingClientRect();
+      const inViewport = rect.top < (window.innerHeight || document.documentElement.clientHeight) && rect.bottom > 0;
+      if (inViewport) {
+        setRowVisible(true);
+        return;
+      }
+    } catch (e) {
+      // ignore
+    }
+    let obs: IntersectionObserver | null = null;
+    try {
+      obs = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && entry.intersectionRatio > 0.05) {
+            setRowVisible(true);
+            if (obs && el) { obs.unobserve(el); }
+          }
+        }
+      }, { threshold: [0, 0.05, 0.2] });
+      obs.observe(el);
+    } catch (e) {
+      // fallback: if IntersectionObserver isn't available, mark visible
+      setRowVisible(true);
+    }
+    return () => { try { if (obs && el) obs.unobserve(el); } catch (e) {} };
+  }, [rowRef.current]);
   return (
-    <div className={`row-container ${isTop10 ? 'top10' : ''}`}>
+    <div ref={rowRef} className={`row-container ${isTop10 ? 'top10' : ''}`}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div className="row-title">{title}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="row-title">{title}</div>
+          {onExplore ? (
+            <button
+              className="row-explore-btn"
+              onClick={(e) => { e.stopPropagation(); try { onExplore(); } catch (err) {} }}
+              aria-label={`Explore more ${title}`}
+            >
+              Explore More &gt;
+            </button>
+          ) : null}
+        </div>
         {(isTop10 || backdropMode) ? (
           <div style={{ marginLeft: 'auto' }}>
             <div className="row-page-indicator-inline" aria-hidden>
@@ -372,9 +466,10 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode }: {
                   }}
                 >
                   {m.backdrop ? (
-                    <div className="continue-backdrop" style={{ backgroundImage: `url(https://image.tmdb.org/t/p/original${m.backdrop})` }}>
+                    // use a smaller backdrop size (w780) to reduce network weight and speed up loads
+                    <div className="continue-backdrop" style={{ backgroundImage: `url(https://image.tmdb.org/t/p/w780${m.backdrop})` }}>
                       {m.logoPath ? (
-                        <img src={`https://image.tmdb.org/t/p/w300${m.logoPath}`} alt={m.title} className="continue-logo"/>
+                        <img loading="lazy" src={`https://image.tmdb.org/t/p/w300${m.logoPath}`} alt={m.title} className="continue-logo"/>
                       ) : (
                         <div className="continue-logo-text">{m.title}</div>
                       )}
@@ -469,7 +564,7 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode }: {
                   }}
                 >
                   <div className="preview-modal" role="dialog" aria-hidden={!previewAnimating}>
-                    <div className="preview-backdrop" style={{ backgroundImage: `url(https://image.tmdb.org/t/p/original${hoverItem.backdrop})` }}>
+                    <div className="preview-backdrop" style={{ backgroundImage: `url(https://image.tmdb.org/t/p/w780${hoverItem.backdrop})` }}>
                       {hoverTrailerKey ? (
                         <iframe
                           className="preview-iframe"

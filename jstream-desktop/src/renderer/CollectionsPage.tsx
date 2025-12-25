@@ -26,6 +26,28 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie, selectedCo
   const [collectionDetails, setCollectionDetails] = useState<CollectionDetail | null>(null);
 
   const detailCache = React.useRef<Map<number, CollectionDetail>>(new Map());
+  const DETAIL_CACHE_KEY = 'jstream:collection_detail_cache_v1';
+
+  // Restore cache from sessionStorage on first mount so reloads keep cached collection details
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(DETAIL_CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        for (const k of Object.keys(parsed || {})) {
+          try { detailCache.current.set(Number(k), parsed[k]); } catch (e) { /* ignore malformed */ }
+        }
+      }
+    } catch (e) { /* ignore */ }
+  }, []);
+
+  function persistDetailCache() {
+    try {
+      const obj: Record<number, any> = {};
+      for (const [k, v] of Array.from(detailCache.current.entries())) obj[k] = v;
+      sessionStorage.setItem(DETAIL_CACHE_KEY, JSON.stringify(obj));
+    } catch (e) { /* ignore */ }
+  }
 
   // Fetch feed from main process (downloads & decompresses TMDB export server-side)
   // Reset feed and cache on mount or refresh
@@ -34,7 +56,7 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie, selectedCo
     setFeedPage(1);
     setFeedHasMore(true);
     setFeedError(null);
-    detailCache.current = new Map();
+    // Do not clear detailCache on reload; keep persisted cache across renderer reloads.
     loadFeedPage(1);
     // eslint-disable-next-line
   }, []);
@@ -165,6 +187,7 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie, selectedCo
                 poster_full: detail.poster_path ? `https://image.tmdb.org/t/p/original${detail.poster_path}` : (detail.backdrop_path ? `https://image.tmdb.org/t/p/original${detail.backdrop_path}` : null)
               };
               detailCache.current.set(Number(item.id), value);
+              try { persistDetailCache(); } catch (e) { /* ignore */ }
               // update stats for a single loaded item
               setFeedStats(s => ({ ...s, filled: (s.filled || 0) + 1 }));
               console.log('detail for', item.id, 'cached');
@@ -173,6 +196,7 @@ export default function CollectionsPage({ onSelectMovie, onPlayMovie, selectedCo
               // increment failed count
               setFeedStats(s => ({ ...s, failed: (s.failed || 0) + 1 }));
               detailCache.current.set(Number(item.id), { id: item.id, name: item.name || `Collection ${item.id}`, poster_path: null, backdrop_path: null, poster_full: null } as CollectionDetail);
+              try { persistDetailCache(); } catch (e) { /* ignore */ }
             }
           }
         });
