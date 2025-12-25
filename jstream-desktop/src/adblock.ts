@@ -1,69 +1,175 @@
 import fs from 'fs';
 import path from 'path';
 
-type Rule = string;
+type CompiledRule = { raw: string, re?: RegExp, isRegex: boolean };
 
 class AdblockManager {
   enabled = true;
   popupBlocking = true;
-  urlRules: Rule[] = [];
-  hostRules: Rule[] = [];
+  // compiled block and exception rules
+  blockRules: CompiledRule[] = [];
+  exceptionRules: CompiledRule[] = [];
   cosmeticSelectors: string[] = [];
-  filtersPath: string;
+  cosmeticExceptions: string[] = [];
+  filtersDir: string;
 
   constructor() {
-    // Resolve filters path relative to the compiled location. This works in dev and packaged apps.
-    this.filtersPath = path.join(__dirname, '..', 'adblock', 'filters.txt');
+    // Directory containing the provided filter lists (easylist, filters.txt, etc.)
+    this.filtersDir = path.join(__dirname, '..', 'adblock');
     this.reloadFilters();
   }
 
   reloadFilters() {
     try {
-      const content = fs.readFileSync(this.filtersPath, 'utf8');
-      this.parseFilterFile(content);
+      const files = fs.readdirSync(this.filtersDir);
+      let combined = '';
+      for (const f of files) {
+        if (!f.endsWith('.txt')) continue;
+        const p = path.join(this.filtersDir, f);
+        try {
+          const c = fs.readFileSync(p, 'utf8');
+          combined += '\n' + c;
+        } catch (e) {
+          // skip unreadable file
+        }
+      }
+      this.parseFilterFile(combined);
     } catch (e) {
-      // No filters file available — keep defaults
-      console.warn('Adblock: failed to load filters, using defaults', e);
+      console.warn('Adblock: failed to load filter directory, falling back to filters.txt', e);
+      try {
+        const fallback = path.join(this.filtersDir, 'filters.txt');
+        const content = fs.readFileSync(fallback, 'utf8');
+        this.parseFilterFile(content);
+      } catch (err) {
+        console.warn('Adblock: no filters available', err);
+      }
     }
   }
 
   parseFilterFile(content: string) {
-    const lines = content.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    const urlRules: Rule[] = [];
-    const hostRules: Rule[] = [];
-    for (const l of lines) {
-      if (l.startsWith('#') || l.startsWith('/*')) continue;
-      // crude heuristic: if line contains "/" or "*" treat as url rule, else host
-      if (l.includes('/') || l.includes('*')) urlRules.push(l);
-      else if (l.includes('.') || l.includes('ad')) hostRules.push(l);
-      else hostRules.push(l);
+    this.blockRules = [];
+    this.exceptionRules = [];
+    this.cosmeticSelectors = [];
+    this.cosmeticExceptions = [];
+
+    const lines = content.split(/\r?\n/);
+    for (let raw of lines) {
+      raw = raw.trim();
+      if (!raw) continue;
+      if (raw.startsWith('!') || raw.startsWith('#')) continue; // comments
+
+      // Cosmetic rules
+      // e.g. example.com##.ad, ##.site-ad
+      const cosmeticIdx = raw.indexOf('##');
+      const cosmeticExceptionIdx = raw.indexOf('#@#');
+      if (cosmeticIdx !== -1) {
+        const sel = raw.slice(cosmeticIdx + 2).trim();
+        if (sel) this.cosmeticSelectors.push(sel);
+        continue;
+      }
+      if (cosmeticExceptionIdx !== -1) {
+        const sel = raw.slice(cosmeticExceptionIdx + 3).trim();
+        if (sel) this.cosmeticExceptions.push(sel);
+        continue;
+      }
+
+      // Exception rule
+      if (raw.startsWith('@@')) {
+        const r = raw.slice(2);
+        const compiled = this.compileRule(r);
+        if (compiled) this.exceptionRules.push(compiled);
+        continue;
+      }
+
+      // Normal block rule
+      const compiled = this.compileRule(raw);
+      if (compiled) this.blockRules.push(compiled);
     }
-    this.urlRules = urlRules;
-    this.hostRules = hostRules;
+  }
+
+  // Convert a subset of ABP rule syntax to a RegExp. This is not a full implementation
+  // but covers common constructs found in EasyList and similar lists used in this repo.
+  compileRule(rule: string): CompiledRule | null {
+    rule = rule.trim();
+    if (!rule) return null;
+
+    // If rule is a regex /.../
+    if (rule.startsWith('/') && rule.lastIndexOf('/') > 0) {
+      const last = rule.lastIndexOf('/');
+      const body = rule.slice(1, last);
+      try {
+        const re = new RegExp(body);
+        return { raw: rule, re, isRegex: true };
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // Replace ABP tokens with regex equivalents
+    let r = rule
+      .replace(/\^/g, '(?:[^A-Za-z0-9._%\-]|$)') // separator token
+      .replace(/\*/g, '.*');
+
+    // Leading || indicates domain anchor
+    if (r.startsWith('||')) {
+      // example: ||domain.com^ -> match protocol and optional subdomains
+      r = r.slice(2);
+      // escape dots
+      const esc = r.replace(/([.*+?^${}()|[\]\\])/g, '\\$1');
+      // remove our separator replacement if present at end
+      const body = esc.replace(/\\\(\?:\[\^A\-Za\-z0\-9\._%\\-\]\|\$\)$/, '');
+      const regexStr = '^(?:https?:\\/\\/)?(?:[^\/]*\\.)?' + body;
+      try {
+        const re = new RegExp(regexStr);
+        return { raw: rule, re, isRegex: false };
+      } catch (e) { /* fallthrough */ }
+    }
+
+    // Anchors: | at start or end
+    let startsAnchored = false;
+    let endsAnchored = false;
+    if (r.startsWith('|')) { startsAnchored = true; r = r.slice(1); }
+    if (r.endsWith('|')) { endsAnchored = true; r = r.slice(0, -1); }
+
+    // Escape characters except our .* and separator pattern
+    // We'll escape remaining regex meta characters
+    const escaped = r.replace(/([.+?^${}()|[\]\\])/g, '\\$1');
+    let final = escaped;
+    if (startsAnchored) final = '^' + final;
+    if (endsAnchored) final = final + '$';
+
+    try {
+      const re = new RegExp(final);
+      return { raw: rule, re, isRegex: false };
+    } catch (e) {
+      return null;
+    }
   }
 
   matches(urlString: string) {
+    if (!this.enabled) return false;
     try {
-      const u = new URL(urlString);
-      const host = u.hostname;
       const full = urlString;
-      // Host rules: simple substring match
-      for (const h of this.hostRules) {
-        if (!h) continue;
-        if (host === h) return true;
-        if (host.endsWith('.' + h)) return true;
-        if (host.includes(h)) return true;
+
+      // Exceptions win first
+      for (const ex of this.exceptionRules) {
+        if (!ex) continue;
+        if (ex.isRegex && ex.re) {
+          if (ex.re.test(full)) return false;
+        } else if (ex.re) {
+          if (ex.re.test(full)) return false;
+        }
       }
-      // URL rules: substring or simple wildcard
-      for (const r of this.urlRules) {
-        if (!r) continue;
-        const pattern = r.replace(/\*/g, '');
-        if (pattern && full.includes(pattern)) return true;
-        try {
-          const re = new RegExp(r);
-          if (re.test(full)) return true;
-        } catch (e) {
-          // ignore invalid regex
+
+      // Then check blocks
+      for (const b of this.blockRules) {
+        if (!b) continue;
+        if (b.isRegex && b.re) {
+          if (b.re.test(full)) return true;
+        } else if (b.re) {
+          if (b.re.test(full)) return true;
+        } else if (b.raw && full.includes(b.raw)) {
+          return true;
         }
       }
       return false;
@@ -73,14 +179,15 @@ class AdblockManager {
   }
 
   addRule(rule: string) {
-    // Add to URL rules for simplicity
-    this.urlRules.push(rule);
-    return this.urlRules.length;
+    const c = this.compileRule(rule);
+    if (c) this.blockRules.push(c);
+    return this.blockRules.length;
   }
 
   addHostRule(host: string) {
-    this.hostRules.push(host);
-    return this.hostRules.length;
+    // Convert host to a simple contains rule
+    const rule = '*://' + host + '/*';
+    return this.addRule(rule);
   }
 
   addCosmetic(selector: string) {
@@ -89,18 +196,19 @@ class AdblockManager {
   }
 
   updateLists(lines: string[]) {
-    const content = lines.join('\n');
+    // Overwrite filters.txt with the provided lines and reload
     try {
-      fs.writeFileSync(this.filtersPath, content, 'utf8');
-      this.parseFilterFile(content);
+      const p = path.join(this.filtersDir, 'filters.txt');
+      fs.writeFileSync(p, lines.join('\n'), 'utf8');
+      this.reloadFilters();
     } catch (e) {
       console.error('Adblock: failed to update filters file', e);
     }
-    return { urlRules: this.urlRules.length, hostRules: this.hostRules.length, cosmeticSelectors: this.cosmeticSelectors.length };
+    return { blockRules: this.blockRules.length, exceptionRules: this.exceptionRules.length, cosmeticSelectors: this.cosmeticSelectors.length };
   }
 
   stats() {
-    return { enabled: this.enabled, urlRules: this.urlRules.length, cosmeticSelectors: this.cosmeticSelectors.length, hostRules: this.hostRules.length };
+    return { enabled: this.enabled, blockRules: this.blockRules.length, exceptionRules: this.exceptionRules.length, cosmeticSelectors: this.cosmeticSelectors.length };
   }
 }
 

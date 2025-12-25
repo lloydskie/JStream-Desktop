@@ -44,16 +44,35 @@ function removeMatchingElements(selectors: string[]) {
   } catch (e) { console.error(e); }
 }
 
-window.addEventListener('DOMContentLoaded', async () => {
+// Fetch and inject cosmetic selectors as early as possible to avoid flicker.
+let __adblock_selectors: string[] = [];
+(async () => {
   try {
     const res = await ipcRenderer.invoke('adblock-get-cosmetics');
     const selectors: string[] = (res && res.cosmeticSelectors) || [];
+    __adblock_selectors = selectors;
     if (selectors.length) injectCosmeticStyles(selectors);
     // run a MutationObserver to remove elements that match later
     const observer = new MutationObserver(() => removeMatchingElements(selectors));
     observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
     // also remove existing iframes that look like ads
     removeMatchingElements(selectors.concat(['iframe[src*="ads"]', 'iframe[src*="doubleclick"]', '[data-ad]']));
+  } catch (e) {
+    // ignore
+  }
+})();
+
+window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    // Ensure selectors were applied; if not, fetch and inject now
+    if (!__adblock_selectors || __adblock_selectors.length === 0) {
+      const res = await ipcRenderer.invoke('adblock-get-cosmetics');
+      const selectors: string[] = (res && res.cosmeticSelectors) || [];
+      if (selectors.length) injectCosmeticStyles(selectors);
+      const observer = new MutationObserver(() => removeMatchingElements(selectors));
+      observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+      removeMatchingElements(selectors.concat(['iframe[src*="ads"]', 'iframe[src*="doubleclick"]', '[data-ad]']));
+    }
   } catch (e) {
     // ignore
   }

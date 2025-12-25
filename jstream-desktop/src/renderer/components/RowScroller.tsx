@@ -12,8 +12,36 @@ export default function RowScroller({ className = 'row-scroll', children, scroll
     const el = (scrollerRef as any).current;
     if (!el) return;
     const update = () => {
-      setCanScrollLeft(el.scrollLeft > 8);
-      setCanScrollRight(el.scrollWidth - el.clientWidth - el.scrollLeft > 8);
+      const dpr = (window && (window.devicePixelRatio || 1)) || 1;
+      const eps = Math.max(1, 8 / dpr);
+      // Use bounding rect widths so calculations reflect scaled displays
+      const containerWidth = el.getBoundingClientRect().width;
+      const rootStyles = getComputedStyle(document.documentElement);
+      const btnRaw = rootStyles.getPropertyValue('--scroller-button-width') || '';
+      const btnWidth = parseFloat(btnRaw) || 96;
+      const paddingLeft = parseFloat(getComputedStyle(el).paddingLeft || '0') || 0;
+
+      setCanScrollLeft(el.scrollLeft > eps);
+      // Determine right-scrollability by checking whether last item's right edge
+      // extends beyond the visible area when accounting for the overlay button.
+      let canRight = false;
+      try {
+        const first = el.querySelector(':scope > *') as HTMLElement | null;
+        const gap = parseFloat(getComputedStyle(el).gap || '0') || 0;
+        const childW = first ? first.getBoundingClientRect().width : ((containerWidth) / (itemsPerPage || 1));
+        const N = itemCount || 0;
+        if (N > 0) {
+          const lastItemOffset = (N - 1) * (childW + gap);
+          const lastItemRight = lastItemOffset + childW + paddingLeft;
+          const visibleRight = el.scrollLeft + (containerWidth - btnWidth);
+          canRight = (lastItemRight - visibleRight) > eps;
+        } else {
+          canRight = (el.scrollWidth - el.clientWidth - el.scrollLeft) > eps;
+        }
+      } catch (e) {
+        canRight = (el.scrollWidth - el.clientWidth - el.scrollLeft) > eps;
+      }
+      setCanScrollRight(canRight);
       let pages = 0;
       let idx = 0;
       if (itemsPerPage && itemCount) {
@@ -23,9 +51,10 @@ export default function RowScroller({ className = 'row-scroll', children, scroll
         const btnWidth = parseFloat(btnRaw) || 96;
         const first = el.querySelector(':scope > *') as HTMLElement | null;
         const gap = parseFloat(getComputedStyle(el).gap || '0') || 0;
-        const childW = first ? first.getBoundingClientRect().width : (el.clientWidth / itemsPerPage);
+        const childW = first ? first.getBoundingClientRect().width : ((el.getBoundingClientRect().width) / itemsPerPage);
         // available width for items excludes the left/right overlay button areas (they are overlaid)
-        const available = Math.max(0, el.clientWidth - (btnWidth * 2));
+        const containerWidth = el.getBoundingClientRect().width;
+        const available = Math.max(0, containerWidth - (btnWidth * 2));
         const candidatePerPage = Math.max(1, Math.floor((available + gap) / (childW + gap)));
         const effectiveItemsPerPage = Math.max(1, Math.min(itemsPerPage || candidatePerPage, candidatePerPage));
 
@@ -52,9 +81,10 @@ export default function RowScroller({ className = 'row-scroll', children, scroll
         pages = Math.max(1, pagesArr.length);
         idx = distances.length ? distances.indexOf(Math.min(...distances)) : 0;
       } else {
-        // compute pages based on clientWidth
-        pages = Math.max(1, Math.ceil(el.scrollWidth / el.clientWidth));
-        idx = Math.min(pages - 1, Math.max(0, Math.round(el.scrollLeft / el.clientWidth)));
+        // compute pages based on visible container width (accounts for device scaling)
+        const containerWidth = el.getBoundingClientRect().width;
+        pages = Math.max(1, Math.ceil(el.scrollWidth / containerWidth));
+        idx = Math.min(pages - 1, Math.max(0, Math.round(el.scrollLeft / containerWidth)));
       }
       setPageCount(pages);
       setPageIndex(idx);
@@ -88,11 +118,12 @@ export default function RowScroller({ className = 'row-scroll', children, scroll
     // compute page-sized scroll target so JS paging matches CSS snap pages
     const first = el.querySelector(':scope > *') as HTMLElement | null;
     const gap = parseFloat(getComputedStyle(el).gap || '0') || 0;
-    const childW = first ? first.getBoundingClientRect().width : (el.clientWidth / (itemsPerPage || 1));
+    const childW = first ? first.getBoundingClientRect().width : ((el.getBoundingClientRect().width) / (itemsPerPage || 1));
     const rootStyles = getComputedStyle(document.documentElement);
     const btnRaw = rootStyles.getPropertyValue('--scroller-button-width') || '';
     const btnWidth = parseFloat(btnRaw) || 96;
-    const available = Math.max(0, el.clientWidth - (btnWidth * 2));
+    const containerWidth = el.getBoundingClientRect().width;
+    const available = Math.max(0, containerWidth - (btnWidth * 2));
     const candidatePerPage = Math.max(1, Math.floor((available + gap) / (childW + gap)));
     const effectiveItemsPerPage = Math.max(1, Math.min(itemsPerPage || candidatePerPage, candidatePerPage));
     const P = effectiveItemsPerPage;
@@ -104,11 +135,45 @@ export default function RowScroller({ className = 'row-scroll', children, scroll
     if (lastCount > 0 && lastCount < P && pagesRaw > 1) starts[starts.length - 1] = Math.max(0, N - P);
     const paddingLeft = parseFloat(getComputedStyle(el).paddingLeft || '0') || 0;
     const pagePositions = starts.map(s => s * (childW + gap));
-    // decide target page based on current pageIndex
-    let targetPage = pageIndex + (delta > 0 ? 1 : -1);
+    // decide target page based on measured current scroll (avoid stale React state)
+    let currentPage = 0;
+    try {
+      const currentScroll = el.scrollLeft;
+      // find nearest page index from current scrollLeft similar to update()
+      const distances = pagePositions.map(pos => Math.abs(currentScroll - (pos - paddingLeft)));
+      currentPage = distances.length ? distances.indexOf(Math.min(...distances)) : 0;
+    } catch (e) {
+      currentPage = Math.min(starts.length - 1, Math.max(0, pageIndex));
+    }
+    let targetPage = currentPage + (delta > 0 ? 1 : -1);
     targetPage = Math.max(0, Math.min(starts.length - 1, targetPage));
-    const targetScroll = Math.max(0, Math.round(pagePositions[targetPage] - paddingLeft));
-    el.scrollTo({ left: targetScroll, behavior: 'smooth' });
+    const targetScroll = Math.max(0, pagePositions[targetPage] - paddingLeft);
+    // Ensure we never scroll past the maximum scrollLeft — clamp to available range
+    const maxScroll = Math.max(0, el.scrollWidth - el.clientWidth);
+    const dpr = (window && (window.devicePixelRatio || 1)) || 1;
+    // Additionally ensure the last item is visible when navigating to the last page
+    let desiredScroll = targetScroll;
+    try {
+      const rootStyles = getComputedStyle(document.documentElement);
+      const btnRaw = rootStyles.getPropertyValue('--scroller-button-width') || '';
+      const btnWidth = parseFloat(btnRaw) || 96;
+      const gap = parseFloat(getComputedStyle(el).gap || '0') || 0;
+      const N = itemCount || 0;
+      if (N > 0) {
+        const lastItemOffset = (N - 1) * (childW + gap);
+        const lastItemRight = lastItemOffset + childW + paddingLeft;
+        const containerWidth = el.getBoundingClientRect().width;
+        const desiredForLast = Math.max(0, lastItemRight - (containerWidth - btnWidth));
+        // Only bump to the 'last item visible' position when navigating to the final page
+        if (targetPage === (starts.length - 1) && desiredForLast > desiredScroll) desiredScroll = desiredForLast;
+      }
+    } catch (e) {
+      // ignore
+    }
+    const finalScroll = Math.min(Math.max(0, desiredScroll), maxScroll);
+    // Round to the nearest device pixel to avoid half-pixel clipping on scaled displays
+    const finalScrollRounded = Math.round(finalScroll * dpr) / dpr;
+    el.scrollTo({ left: finalScrollRounded, behavior: 'smooth' });
   }
 
   return (
