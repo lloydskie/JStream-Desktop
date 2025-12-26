@@ -350,10 +350,10 @@ ipcMain.handle('tmdb-request', async (event, endpoint: string, params: Record<st
     }
 
     // perform network request server-side to keep API key out of renderer
-    const config = await (async () => {
+    const config = await (async (): Promise<any> => {
       try {
         // dynamic import of remoteConfig util
-        const rc = await import(path.join(__dirname, 'utils', 'remoteConfig.js')).catch(() => null);
+        const rc = await import(path.join(__dirname, 'utils', 'remoteConfig.js')).catch((): any => null);
         if (rc && rc.getPlayerConfig) return rc.getPlayerConfig();
       } catch (e) { /* ignore */ }
       return null;
@@ -402,7 +402,7 @@ ipcMain.handle('tmdb-exports-getCollectionsFeed', async (event, opts: { tryDays?
   const page = typeof opts.page === 'number' ? opts.page : 1;
     const tryDays = typeof opts.tryDays === 'number' ? opts.tryDays : 90;  try {
     // Get API key
-    const rc = await import(path.join(__dirname, 'utils', 'remoteConfig.js')).catch(() => null);
+    const rc = await import(path.join(__dirname, 'utils', 'remoteConfig.js')).catch((): any => null);
     const cfg = rc && rc.getPlayerConfig ? await rc.getPlayerConfig() : null;
     let apiKey = cfg && cfg.tmdbApiKey;
     if (!apiKey) {
@@ -470,7 +470,7 @@ ipcMain.handle('tmdb-exports-getCollectionsFeed', async (event, opts: { tryDays?
       const end = start + perPage;
       const pageIds = fallbackIds.slice(start, end);
       const hasMore = end < fallbackIds.length;
-      const pageItems = pageIds.map(id => ({ id, name: undefined }));
+      const pageItems = pageIds.map((id): { id: number; name?: string | undefined } => ({ id, name: undefined }));
       console.log('tmdb-exports-getCollectionsFeed: fallback returning', pageItems.length, 'items for page', page);
       return { items: pageItems, hasMore };
     }
@@ -532,7 +532,7 @@ ipcMain.handle('tmdb-exports-getCollectionsFeed', async (event, opts: { tryDays?
       const media_type = args.media_type || 'movie';
 
       // Obtain API key from remoteConfig or environment
-      const rc = await import(path.join(__dirname, 'utils', 'remoteConfig.js')).catch(() => null);
+      const rc = await import(path.join(__dirname, 'utils', 'remoteConfig.js')).catch((): any => null);
       const cfg = rc && rc.getPlayerConfig ? await rc.getPlayerConfig() : null;
       const apiKey = (cfg && cfg.tmdbApiKey) || process.env.TMDB_API_KEY;
       if (!apiKey) throw new Error('TMDB_API_KEY not set in env or remote config');

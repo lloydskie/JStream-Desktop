@@ -30,6 +30,21 @@ export default function TopSearches({ onPlay, onSelect }: { onPlay?: (id:number|
     return () => { document.body.classList.remove('preview-open'); };
   }, [showPreviewModal]);
 
+  // Listen for app-level request to forcibly close any open preview modal
+  useEffect(() => {
+    function onClosePreviews() {
+      try { if (previewTimeoutRef.current) { window.clearTimeout(previewTimeoutRef.current); previewTimeoutRef.current = null; } } catch (e) {}
+      try { hoverTokenRef.current++; } catch (e) {}
+      try { setHoverIndex(null); } catch (e) {}
+      try { setHoverTrailerKey(null); } catch (e) {}
+      try { setShowPreviewModal(false); } catch (e) {}
+      try { setPreviewAnimating(false); } catch (e) {}
+      try { hoverTargetIdRef.current = null; } catch (e) {}
+    }
+    window.addEventListener('app:close-previews', onClosePreviews as EventListener);
+    return () => window.removeEventListener('app:close-previews', onClosePreviews as EventListener);
+  }, []);
+
   useEffect(() => {
     let mounted = true;
     async function load() {
@@ -283,9 +298,11 @@ export default function TopSearches({ onPlay, onSelect }: { onPlay?: (id:number|
                   // clear hover target and resume hero trailer when preview closes
                   hoverTargetIdRef.current = null;
                   try {
-                    const ctrl = (window as any).__appTrailerController;
-                    if (ctrl && typeof ctrl.resume === 'function') ctrl.resume();
-                    else window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
+                    if (!(window as any).__heroModalOpen) {
+                      const ctrl = (window as any).__appTrailerController;
+                      if (ctrl && typeof ctrl.resume === 'function') ctrl.resume();
+                      else window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
+                    }
                   } catch (e) { window.dispatchEvent(new CustomEvent('app:resume-hero-trailer')); }
                 }, 220);
               }}
@@ -326,9 +343,11 @@ export default function TopSearches({ onPlay, onSelect }: { onPlay?: (id:number|
               // clear hover target and resume hero trailer when preview modal closes
               hoverTargetIdRef.current = null;
               try {
-                const ctrl = (window as any).__appTrailerController;
-                if (ctrl && typeof ctrl.resume === 'function') ctrl.resume();
-                else window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
+                if (!(window as any).__heroModalOpen) {
+                  const ctrl = (window as any).__appTrailerController;
+                  if (ctrl && typeof ctrl.resume === 'function') ctrl.resume();
+                  else window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
+                }
               } catch (e) { window.dispatchEvent(new CustomEvent('app:resume-hero-trailer')); }
             }, 220);
           }}
@@ -381,6 +400,7 @@ export default function TopSearches({ onPlay, onSelect }: { onPlay?: (id:number|
                   <button className="preview-btn" aria-label="More info" onClick={(ev) => {
                     ev.stopPropagation();
                     const it = items[hoverIndex];
+                    try { window.dispatchEvent(new Event('app:close-previews')); } catch (e) {}
                     if (typeof onSelect === 'function' && it) {
                       onSelect(it.id, it.type);
                     } else {

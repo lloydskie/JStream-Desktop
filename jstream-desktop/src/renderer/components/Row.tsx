@@ -73,6 +73,8 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode, onE
 
   function resumeHero() {
     try {
+      // Don't resume background hero if a details modal is open
+      if ((window as any).__heroModalOpen) return;
       const ctrl = (window as any).__appTrailerController;
       if (ctrl && typeof ctrl.resume === 'function') ctrl.resume();
       else window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
@@ -86,13 +88,36 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode, onE
     };
   }, []);
 
+  // Listen for an app-level request to forcibly close any open preview modal
+  useEffect(() => {
+    function onClosePreviews() {
+      try { hoverTokenRef.current++; } catch (e) {}
+      try { setHoverIndex(null); } catch (e) {}
+      try { setHoverTrailerKey(null); } catch (e) {}
+      try { setShowPreviewModal(false); } catch (e) {}
+      try { setPreviewAnimating(false); } catch (e) {}
+      try { if (previewTimeoutRef.current) { window.clearTimeout(previewTimeoutRef.current); previewTimeoutRef.current = null; } } catch (e) {}
+      try { if (previewOpenTimeoutRef.current) { window.clearTimeout(previewOpenTimeoutRef.current); previewOpenTimeoutRef.current = null; } } catch (e) {}
+      try {
+        const id = hoverTargetIdRef.current || previewOwnerIdRef.current;
+        if (id) {
+          const el = document.querySelector(`[data-preview-target="${id}"]`) as HTMLElement | null;
+          if (el) el.removeAttribute('data-preview-target');
+        }
+      } catch (e) {}
+      try { globalPreviewManager.open = false; globalPreviewManager.currentOwnerId = null; globalPreviewManager.closing = false; } catch (e) {}
+    }
+    window.addEventListener('app:close-previews', onClosePreviews as EventListener);
+    return () => window.removeEventListener('app:close-previews', onClosePreviews as EventListener);
+  }, []);
+
   // Local enriched items including logo/backdrop paths when in backdrop mode
   const [items, setItems] = useState<any[]>(movies || []);
 
   // Simple cache for logo paths persisted in sessionStorage so reloads keep the cache
   // Key: `${type}:${id}` -> file_path string
   const LOGO_CACHE_KEY = 'jstream:logo_cache_v1';
-  const logoCacheRef = (React as any).useRef<Map<string,string>>(new Map()).current as Map<string,string>;
+  const logoCacheRef = useRef<Map<string,string>>(new Map()).current as Map<string,string>;
 
   useEffect(() => {
     try {
@@ -483,6 +508,7 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode, onE
               ) : (
                 <div className={`movie-card ${focusedIndex===idx? 'focused-row':''}`} onClick={() => {
                   const inferred: 'movie'|'tv' = (m._media === 'tv' || m.media_type === 'tv') ? 'tv' : 'movie';
+                  try { console.debug('Row.click -> onSelect', { id: m.id, type: inferred, title }); } catch (e) {}
                   if (onSelect) onSelect(m.id, inferred);
                 }} tabIndex={0}
                   onMouseOver={(e)=>{
@@ -611,6 +637,9 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode, onE
                         <div className="preview-actions-right">
                           <button className="preview-btn" aria-label="More info" onClick={(ev) => {
                             ev.stopPropagation();
+                            try { console.debug('Row.preview More info -> onSelect', { id: hoverItem?.id, type: hoverItem?._media || hoverItem?.media_type }); } catch (e) {}
+                            // ensure any open preview modal is closed before opening the details modal
+                            try { window.dispatchEvent(new Event('app:close-previews')); } catch (e) {}
                             if (typeof onSelect === 'function' && hoverItem) onSelect(hoverItem.id, hoverItem._media || hoverItem.media_type || 'movie');
                           }}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/><path d="M12 16v-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M12 8h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>

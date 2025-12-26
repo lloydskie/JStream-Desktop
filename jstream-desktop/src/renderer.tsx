@@ -3,6 +3,45 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './renderer/App';
 
+// Early wrapper for __appTrailerController to block direct resume() calls
+// while a details modal is open. Placing here ensures it runs before
+// other modules that may assign the controller.
+try {
+  const win = window as any;
+  let internalController = win.__appTrailerController;
+  Object.defineProperty(win, '__appTrailerController', {
+    configurable: true,
+    enumerable: true,
+    get() { return internalController; },
+    set(val) {
+      try {
+        if (!val) { internalController = val; return; }
+        const orig = val;
+        const wrapped: any = {};
+        if (typeof orig.resume === 'function') {
+          wrapped.resume = function(...args: any[]) {
+            try {
+              if (win.__heroModalOpen) {
+                console.debug('EarlyWrapper: blocked direct resume while modal open');
+                return;
+              }
+            } catch (e) { /* ignore */ }
+            return orig.resume.apply(orig, args);
+          };
+        }
+        if (typeof orig.pause === 'function') wrapped.pause = function(...a: any[]) { return orig.pause.apply(orig, a); };
+        for (const k of Object.keys(orig)) if (!(k in wrapped)) wrapped[k] = (orig as any)[k];
+        internalController = wrapped;
+      } catch (e) { internalController = val; }
+    }
+  });
+  if (internalController) {
+    const tmp = internalController;
+    delete (window as any).__appTrailerController;
+    (window as any).__appTrailerController = tmp;
+  }
+} catch (e) { /* ignore */ }
+
 // Global error handlers so the user sees anything that throws during app startup
 // Global error handlers are useful during debugging but can be noisy in the dev UI.
 // Keep them commented out so we can re-enable easily while developing.

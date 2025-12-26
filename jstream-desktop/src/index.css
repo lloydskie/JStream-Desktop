@@ -398,6 +398,172 @@ body{
   overflow-y: hidden; /* avoid vertical scrollbar */
   align-items: flex-start;
 }
+
+/* Details modal responsive styles */
+.details-modal-overlay{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 120000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.details-modal-container{
+  position: relative;
+  width: clamp(320px, 86vw, 1200px);
+  max-width: 1200px;
+  height: clamp(420px, 86vh, 960px);
+  max-height: 96vh;
+  background: var(--surface-card, var(--card));
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+  overflow: auto;
+}
+.details-modal-inner{ padding: 18px; }
+
+/* Make hero scale on narrow screens and keep action buttons accessible */
+.details-modal-container .hero-banner{ background-size: cover; background-position: center; }
+.details-modal-container .hero-banner { min-height: 54vh; max-height: 72vh; }
+.details-modal-container .hero-trailer iframe{ width:100%; height:100%; }
+/* Increase player size inside the details modal: upscale by ~20% from center */
+.details-modal-container .hero-trailer iframe{
+  transform-origin: center center;
+}
+.details-modal-container .hero-banner.playing .hero-trailer iframe{
+  transform: scale(1.5);
+}
+/* Remove play overlay in details modal to avoid duplicate controls and clicks */
+.details-modal-container .play-overlay{ display: none !important; pointer-events: none !important; }
+
+/* Position hero content in modal similar to the full-bleed homepage hero so the
+   logo and overview sit toward the lower-left and can be translated visually. */
+.details-modal-container .hero-content{
+  position: absolute;
+  left: 4%;
+  bottom: 12%;
+  padding: 24px 24px 36px 24px;
+  max-width: 720px;
+  z-index: 120010; /* ensure hero content (logo/overview) sits above action buttons */
+  text-align: left;
+  box-sizing: border-box;
+}
+
+/* Place action buttons below the overview and keep them flowing inside hero-content
+   so they remain visually stationary when .hero-main transforms. */
+.details-modal-container .hero-actions{
+  position: relative; /* flow under .hero-main within .hero-content */
+  display:flex;
+  gap:12px;
+  align-items:flex-start;
+  z-index:120012; /* ensure actions sit above the logo to avoid overlap */
+  left: auto;
+  bottom: auto;
+  margin-top: 50px; /* spacing between overview and actions (increased) */
+}
+/* Modal-specific override: prevent global hero animations from moving the actions
+  Ensure only the .hero-main container moves inside the modal, keeping actions fixed. */
+.details-modal-container .hero-actions{ transform: none !important; transition: none !important; }
+.details-modal-container .hero-actions[style]{ /* if position set inline, still ensure it doesn't get transformed */ transform: none !important; }
+
+/* When certification and mute are rendered inside the hero-actions (modal),
+   render them inline rather than using their global absolute positioning. */
+.details-modal-container .hero-actions .hero-certification{
+  position: static;
+  right: auto;
+  bottom: auto;
+  z-index: auto;
+  background: rgba(255,255,255,0.06);
+  color: #fff;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 12px;
+  border: none;
+  box-shadow: none;
+  height: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+}
+.details-modal-container .hero-actions .hero-mute-inline{
+  background: rgba(0,0,0,0.44);
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255,255,255,0.04);
+  color: #fff;
+  cursor: pointer;
+  transition: background 160ms ease, transform 120ms ease;
+}
+.details-modal-container .hero-actions .hero-mute-inline:hover{ background: rgba(255,255,255,0.06); transform: scale(1.03); }
+
+/* Make all action controls in modal uniform size and alignment */
+.details-modal-container .hero-actions{
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.details-modal-container .hero-actions > .play-cta,
+.details-modal-container .hero-actions > .more-info-btn,
+.details-modal-container .hero-actions > .hero-certification{
+  height: 44px;
+  min-width: 120px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+.details-modal-container .hero-actions > .play-cta .play-icon{ width: 18px; height: 18px; }
+.details-modal-container .hero-actions > .hero-certification{ min-width: auto; padding: 0 10px; }
+.details-modal-container .hero-actions > .more-info-btn{ background: rgba(255,255,255,0.06); }
+
+/* Keep the mute button circular and smaller */
+.details-modal-container .hero-actions > .hero-mute-inline{
+  min-width: 44px; width:44px; height:44px; padding:0; border-radius:999px;
+}
+
+/* Modal-specific overview/ logo behavior:
+  - when the overview collapses, translate it downward so the logo is pulled down toward the action buttons
+  - allow the .hero-main translate to move the logo; don't override .hero-logo transform here */
+.details-modal-container .hero-overview.expanded{ transform: translateY(0) !important; opacity: 1 !important; }
+.details-modal-container .hero-overview.collapsed{ transform: translateY(6px) !important; opacity: 0 !important; max-height: 0 !important; }
+.details-modal-container .hero-overview{
+  font-size: 13px;
+  line-height: 1.35;
+  max-height: 72px;
+}
+.details-modal-container .hero-main{ transition: transform .35s ease !important; }
+@media (max-width: 600px){
+  .details-modal-container{ width: calc(100vw - 28px); height: calc(100vh - 28px); padding:0; }
+  .details-modal-container .hero-main{ transform-origin: center top; }
+  .details-modal-container .hero-actions{ left: 12px; bottom: 12px; }
+  .details-modal-container .hero-main img.hero-logo{ max-width: 160px; height: auto; }
+  .details-modal-container .hero-content{ left: 3%; bottom: 8vh; padding: 12px 16px; max-width: calc(100% - 64px); }
+}
+
+@media (max-width: 420px){
+  .details-modal-container .hero-actions{ left: 8px; bottom: 8px; gap:8px; }
+  .details-modal-container .hero-main img.hero-logo{ max-width: 120px; }
+}
+.details-modal-container .hero-main img.hero-logo{ position: relative; z-index: 120011; }
+
+/* Modal-specific logo sizing: slightly smaller than homepage hero and responsive */
+.details-modal-container .hero-main img.hero-logo{
+  max-width: clamp(120px, 22vw, 220px);
+  width: auto;
+  height: auto;
+  display: block;
+}
 .continue-scroll::-webkit-scrollbar{ display: none; }
 
 /* Page indicator (top-right) for rows that show pager */
@@ -510,7 +676,7 @@ body{
 .row-scroll, .movie-grid, .detail-sections, .search-dropdown{ overscroll-behavior: contain; }
 
 /* hero banner */
-.hero-banner{ position:relative; height:56vh; min-height:380px; border-radius:10px; background-size:cover; background-position:center; margin-bottom:20px; overflow:hidden }
+.hero-banner{ position:relative; height:64vh; min-height:460px; border-radius:10px; background-size:cover; background-position:center; margin-bottom:20px; overflow:hidden }
 .hero-banner.full-bleed{
   /* when portal-mounted into #hero-root the hero is a top-level block and should sit in normal flow */
   position: relative;
@@ -519,8 +685,8 @@ body{
   transform: none;
   width: 100%;
   /* include the header height so the hero extends up behind the navbar */
-  height: calc(72vh + var(--header-height));
-  min-height: calc(420px + var(--header-height));
+  height: calc(78vh + var(--header-height));
+  min-height: calc(520px + var(--header-height));
   border-radius: 0;
   padding: 0;
   margin-bottom: 0;
@@ -531,15 +697,22 @@ body{
 }
 
 /* spacer element inserted after the hero to push the centered content below it */
-.hero-spacer{ height: calc(50vh + var(--header-height)); min-height: calc(420px + var(--header-height)); background: transparent; pointer-events: none; }
+.hero-spacer{
+  /* Increase spacer so the taller hero pushes content further down. Use clamp so it scales but never becomes huge. */
+  height: clamp(260px, calc(46vh + var(--header-height)), calc(520px + var(--header-height))); 
+  min-height: 220px;
+  background: transparent;
+  pointer-events: none;
+}
 
 /* ensure hero content floats above app-shell children but remains below header */
 .hero-banner.full-bleed .hero-content{ z-index: 6; }
 .hero-overlay{ position:absolute; inset:0; pointer-events:none; background: linear-gradient(180deg, rgba(0,0,0,0.15) 10%, rgba(0,0,0,0.6) 60%); }
 .hero-content{ padding:36px; max-width:720px; position:relative; z-index:1; pointer-events:auto }
 .hero-trailer{ position:absolute; inset:0; z-index:-1; overflow:hidden; display:block }
-.hero-trailer iframe{ position:absolute; inset:0; width:100%; height:100%; border:0; pointer-events:none; object-fit:cover; opacity: 0; transform: scale(1.02); transition: opacity 280ms ease, transform 280ms ease; }
-.hero-banner.playing .hero-trailer iframe{ opacity: 1; transform: scale(1); }
+.hero-trailer iframe{ position:absolute; inset:0; width:100%; height:100%; border:0; pointer-events:none; object-fit:cover; opacity: 0; transform: scale(1.02); transform-origin: center center; transition: opacity 280ms ease, transform 280ms ease; }
+/* Upscale the page hero player by ~50% when playing (home, movies, shows) */
+.hero-banner.playing .hero-trailer iframe{ opacity: 1; transform: scale(1.5); }
 @media (max-width: 900px){
   .hero-trailer iframe{ object-position: center top; }
 }
@@ -574,7 +747,16 @@ body{
 }
 @media (max-width: 900px){
   .hero-banner.full-bleed .hero-overlay{ align-items:flex-end; }
-  .hero-banner.full-bleed .hero-content{ position:relative; bottom:auto; left:auto; padding:10px 20px 20px; max-width:100%; text-align:left; }
+  /* Keep hero content anchored to bottom-left on small screens as well. */
+  .hero-banner.full-bleed .hero-content{
+    position: absolute;
+    left: 3%;
+    bottom: 8vh;
+    padding: 12px 16px;
+    max-width: calc(100% - 64px);
+    text-align: left;
+    box-sizing: border-box;
+  }
 }
 
 /* Logo styling (title logo image) */
@@ -762,14 +944,16 @@ body{
   z-index: 0;
 }
 .detail-sections {
-  margin-top: 65vh;
+  /* remove large top margin so detail sections sit immediately below the hero */
+  margin-top: 0;
 }
 @media (min-width: 1440px) {
   .detail-hero {
     height: 75vh;
   }
+  /* ensure no margin-top is added for wide screens */
   .detail-sections {
-    margin-top: 70vh;
+    margin-top: 0;
   }
 }
 /* place a solid dark overlay absolutely so content can be positioned over the backdrop */
@@ -789,7 +973,17 @@ body{
     left: 15%;
   }
 }
-@media (max-width: 900px){ .detail-hero .hero-content{ position:relative; bottom:auto; left:auto; padding:20px; max-width:100%; } }
+@media (max-width: 900px){
+  /* Ensure detail hero content is bottom-left on small screens */
+  .detail-hero .hero-content{
+    position: absolute;
+    left: 4%;
+    bottom: 8vh;
+    padding: 16px;
+    max-width: calc(100% - 64px);
+    box-sizing: border-box;
+  }
+}
 .detail-trailer{ z-index:0 }
 .detail-trailer iframe{ pointer-events: none }
 .detail-logo{ max-height:64px }

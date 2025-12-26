@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function RowScroller({ className = 'row-scroll', children, scrollAmount, scrollerRef: externalRef, disableWheel = true, showPager, onPageChange, itemCount, itemsPerPage }: { className?: string, children?: React.ReactNode, scrollAmount?: number, scrollerRef?: React.RefObject<HTMLDivElement>, disableWheel?: boolean, showPager?: boolean, onPageChange?: (pageIndex:number, pageCount:number) => void, itemCount?: number, itemsPerPage?: number }) {
+export default function RowScroller({ className = 'row-scroll', children, scrollAmount, scrollerRef: externalRef, disableWheel = true, showPager, pagerStyle = 'dots', onPageChange, itemCount, itemsPerPage }: { className?: string, children?: React.ReactNode, scrollAmount?: number, scrollerRef?: React.RefObject<HTMLDivElement>, disableWheel?: boolean, showPager?: boolean, pagerStyle?: 'dots'|'bar', onPageChange?: (pageIndex:number, pageCount:number) => void, itemCount?: number, itemsPerPage?: number }) {
   const innerRef = React.useRef<HTMLDivElement | null>(null);
   const scrollerRef = (externalRef && (externalRef as React.RefObject<HTMLDivElement>).current !== undefined) ? externalRef as React.RefObject<HTMLDivElement> : innerRef;
   const [canScrollLeft, setCanScrollLeft] = React.useState(false);
@@ -22,26 +22,11 @@ export default function RowScroller({ className = 'row-scroll', children, scroll
       const paddingLeft = parseFloat(getComputedStyle(el).paddingLeft || '0') || 0;
 
       setCanScrollLeft(el.scrollLeft > eps);
-      // Determine right-scrollability by checking whether last item's right edge
-      // extends beyond the visible area when accounting for the overlay button.
-      let canRight = false;
-      try {
-        const first = el.querySelector(':scope > *') as HTMLElement | null;
-        const gap = parseFloat(getComputedStyle(el).gap || '0') || 0;
-        const childW = first ? first.getBoundingClientRect().width : ((containerWidth) / (itemsPerPage || 1));
-        const N = itemCount || 0;
-        if (N > 0) {
-          const lastItemOffset = (N - 1) * (childW + gap);
-          const lastItemRight = lastItemOffset + childW + paddingLeft;
-          const visibleRight = el.scrollLeft + (containerWidth - btnWidth);
-          canRight = (lastItemRight - visibleRight) > eps;
-        } else {
-          canRight = (el.scrollWidth - el.clientWidth - el.scrollLeft) > eps;
-        }
-      } catch (e) {
-        canRight = (el.scrollWidth - el.clientWidth - el.scrollLeft) > eps;
-      }
-      setCanScrollRight(canRight);
+      // Simpler, robust right-scrollability check: compare remaining scrollable width
+      // to a small epsilon. This avoids brittle per-item width math that could
+      // miscompute on scaled displays or when gaps/padding vary.
+      const remaining = Math.max(0, el.scrollWidth - el.clientWidth - el.scrollLeft);
+      setCanScrollRight(remaining > eps);
       let pages = 0;
       let idx = 0;
       if (itemsPerPage && itemCount) {
@@ -187,14 +172,26 @@ export default function RowScroller({ className = 'row-scroll', children, scroll
         {children}
       </div>
       {showPager && pageCount > 1 ? (
-        <div className="row-page-indicator" aria-hidden>
-          <div className="page-count">{pageIndex + 1}/{pageCount}</div>
-          <div className="dots">
-            {Array.from({ length: pageCount }).map((_, i) => (
-              <span key={i} className={`dot ${i === pageIndex ? 'active' : ''}`}/>
-            ))}
+        pagerStyle === 'bar' ? (
+          <div className="row-page-indicator-inline" aria-hidden>
+            <div className="bar-list">
+              {Array.from({ length: pageCount }).map((_, i) => (
+                <svg key={i} className={`bar ${i === pageIndex ? 'active' : ''}`} width="28" height="6" viewBox="0 0 28 6" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                  <rect width="28" height="6" rx="0" fill="currentColor" />
+                </svg>
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="row-page-indicator" aria-hidden>
+            <div className="page-count">{pageIndex + 1}/{pageCount}</div>
+            <div className="dots">
+              {Array.from({ length: pageCount }).map((_, i) => (
+                <span key={i} className={`dot ${i === pageIndex ? 'active' : ''}`}/>
+              ))}
+            </div>
+          </div>
+        )
       ) : null}
       <button disabled={!canScrollRight} className={`continue-scroll-button right ${!canScrollRight ? 'disabled' : ''}`} onClick={() => doScroll(1)} aria-label="Scroll right">
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">

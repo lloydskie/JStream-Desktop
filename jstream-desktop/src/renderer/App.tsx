@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { ChakraProvider, defaultSystem } from '@chakra-ui/react';
 import { Tabs, TabList, TabPanels, Tab, TabPanel } from '@chakra-ui/tabs';
 import HomeGrid from './HomeGrid';
-import DetailsPage from './DetailsPage';
+import DetailsModal from './DetailsModal';
 import VideoPlayerPage from './VideoPlayerPage';
 import VideoPlayer from './VideoPlayer';
 import ProfilePage from './ProfilePage';
@@ -25,9 +25,77 @@ import { attachGlobalScrollCapture } from './utils/scrollCapture';
 
 // App-level state: selected movie and active tab index
 
+// Initialize a global guard for direct controller assignments so direct
+// calls to `__appTrailerController.resume()` are blocked while the
+// details modal is open. This runs at module load so it is in place
+// before other modules assign the controller.
+try {
+  const win = window as any;
+  let internalController = win.__appTrailerController;
+  Object.defineProperty(win, '__appTrailerController', {
+    configurable: true,
+    enumerable: true,
+    get() { return internalController; },
+    set(val) {
+      try {
+        if (!val) { internalController = val; return; }
+        const orig = val;
+        const wrapped: any = {};
+        // Wrap resume so it respects the modal-open guard
+        if (typeof orig.resume === 'function') {
+          wrapped.resume = function(...args: any[]) {
+            try {
+              if (win.__heroModalOpen) {
+                try { console.debug('TrailerController: blocked direct resume while modal open'); } catch (e) {}
+                return;
+              }
+            } catch (e) { /* ignore */ }
+            return orig.resume.apply(orig, args);
+          };
+        }
+        // Pass through pause and other methods
+        if (typeof orig.pause === 'function') wrapped.pause = function(...a: any[]) { return orig.pause.apply(orig, a); };
+        for (const k of Object.keys(orig)) {
+          if (!(k in wrapped)) wrapped[k] = (orig as any)[k];
+        }
+        internalController = wrapped;
+      } catch (e) {
+        try { internalController = val; } catch (err) {}
+      }
+    }
+  });
+  // If controller was already present, reassign to trigger wrapping
+  try {
+    if (internalController) {
+      const tmp = internalController;
+      delete (window as any).__appTrailerController;
+      (window as any).__appTrailerController = tmp;
+    }
+  } catch (e) { /* ignore */ }
+} catch (e) { /* ignore */ }
+
 export default function App() {
+  // Log the defaultSystem so we can verify it's present in the renderer bundle
+  try { console.debug('Chakra defaultSystem:', defaultSystem); } catch (e) { console.debug('Chakra defaultSystem: <failed to read>'); }
+  // Use default Chakra theme by leaving ChakraProvider without an explicit theme
   // App component mounted
   React.useEffect(() => { console.log('App mounted'); }, []);
+  // Intercept resume events at app-level to prevent accidental resume while details modal is open
+  useEffect(() => {
+    function onResumeIntercept(evt: Event) {
+      try {
+        const isOpen = Boolean((window as any).__heroModalOpen);
+        if (isOpen) {
+          try { console.debug('App: intercepted app:resume-hero-trailer while modal open — blocking resume'); } catch (e) {}
+          // prevent other listeners from running (stopImmediatePropagation in capture phase)
+          try { (evt as any).stopImmediatePropagation && (evt as any).stopImmediatePropagation(); } catch (e) {}
+        }
+      } catch (e) { /* ignore */ }
+    }
+    // use capture so we run before other listeners
+    window.addEventListener('app:resume-hero-trailer', onResumeIntercept as EventListener, true);
+    return () => window.removeEventListener('app:resume-hero-trailer', onResumeIntercept as EventListener, true);
+  }, []);
   // Attach global scroll capture so hovered scrollable elements receive wheel events
   React.useEffect(() => {
     const detach = attachGlobalScrollCapture();
@@ -35,8 +103,10 @@ export default function App() {
   }, []);
   const [activeIndex, setActiveIndex] = useState<number>(0);
   const [selectedTmdbId, setSelectedTmdbId] = useState<number | null>(null);
-  const [detailsTmdbId, setDetailsTmdbId] = useState<number | null>(null);
-  const [detailsType, setDetailsType] = useState<'movie'|'tv'|null>(null);
+  // legacy details page state removed — using modal state below
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [detailsModalTmdbId, setDetailsModalTmdbId] = useState<number | null>(null);
+  const [detailsModalType, setDetailsModalType] = useState<'movie'|'tv'|null>(null);
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
   const [playerType, setPlayerType] = useState<'movie' | 'tv'>('movie');
   const [playerParams, setPlayerParams] = useState<Record<string, any> | null>(null);
@@ -83,9 +153,21 @@ export default function App() {
   }, []);
 
   function handleSelectMovie(tmdbId: number, type?: 'movie'|'tv') {
-    setDetailsTmdbId(tmdbId);
-    setDetailsType(type || null);
-    setActiveIndex(9); // switch to Details tab
+    // Open details modal instead of navigating to a details page/tab
+    try { console.debug('App.handleSelectMovie called', { tmdbId, type }); } catch (e) {}
+    // Close any preview portals (home grid previews) before opening the details modal
+    try { window.dispatchEvent(new Event('app:close-previews')); } catch (e) { /* ignore */ }
+    // Pause any hero/trailer players in the UI so only the details modal plays trailers
+    try {
+      const ctrl = (window as any).__appTrailerController;
+      if (ctrl && typeof ctrl.pause === 'function') ctrl.pause();
+      else window.dispatchEvent(new CustomEvent('app:pause-hero-trailer'));
+    } catch (e) {
+      try { window.dispatchEvent(new CustomEvent('app:pause-hero-trailer')); } catch (e) { /* ignore */ }
+    }
+    setDetailsModalTmdbId(tmdbId);
+    setDetailsModalType(type || null);
+    setDetailsModalOpen(true);
   }
 
   function handleGoToCollections(collectionId?: number) {
@@ -96,13 +178,18 @@ export default function App() {
   function handleSelectPerson(personId: number) {
     setSelectedPersonId(personId);
     // Person panel is appended at the end of TabPanels
-    setActiveIndex(11);
+    setActiveIndex(10);
   }
 
   // header search removed
 
   function handlePlayMovie(tmdbId: number | string, type: 'movie'|'tv' = 'movie', params: Record<string, any> = {}) {
     const idStr = String(tmdbId);
+    // If a details modal is open, suppress its resume behavior and close it so
+    // the player modal can appear above it. DetailsModal checks
+    // `window.__suppressHeroResume` and will skip resuming the page hero.
+    try { (window as any).__suppressHeroResume = true; } catch (e) { /* ignore */ }
+    try { if (detailsModalOpen) setDetailsModalOpen(false); } catch (e) { /* ignore */ }
     setSelectedTmdbId(Number(idStr) || null);
     setPlayerType(type);
     // enable full set of player features by default when opening the embedded player
@@ -122,6 +209,8 @@ export default function App() {
     setPlayerModalParams(combined);
     setPlayerModalOpen(true);
     try { (window as any).database.setPersonalization('last_selected_movie', idStr); } catch(e) { /* ignore */ }
+    // Allow DetailsModal cleanup to finish without suppressing future resumes.
+    try { delete (window as any).__suppressHeroResume; } catch (e) { /* ignore */ }
     // Save to watch history when starting to play
     try { (window as any).database.watchHistorySet(idStr, 0); } catch(e) { console.error('watchHistorySet on play failed', e); }
   }
@@ -175,13 +264,13 @@ export default function App() {
   // Prevent background scrolling and interaction while modal is open
   useEffect(() => {
     const prevOverflow = document.body.style.overflow;
-    if (playerModalOpen) {
+    if (playerModalOpen || detailsModalOpen) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = prevOverflow || '';
     }
     return () => { document.body.style.overflow = prevOverflow || ''; };
-  }, [playerModalOpen]);
+  }, [playerModalOpen, detailsModalOpen]);
 
   // dedicated SearchPage handles queries
 
@@ -299,7 +388,7 @@ export default function App() {
           ) : null}
           {activeIndex === 0 && <ContinueWatching onPlay={handlePlayMovie} onSelect={handleSelectMovie} />}
           {activeIndex === 0 && <TopSearches onPlay={handlePlayMovie} onSelect={handleSelectMovie} />}
-            <div className="app-shell" aria-hidden={playerModalOpen} style={playerModalOpen ? { pointerEvents: 'none' } : undefined}>
+            <div className="app-shell" aria-hidden={playerModalOpen || detailsModalOpen} style={playerModalOpen || detailsModalOpen ? { pointerEvents: 'none' } : undefined}>
               <TabPanels style={{width: '100%', padding: 0}}>
                 <TabPanel sx={{padding: 0}}><HomeGrid onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedTmdbId={selectedTmdbId} selectedGenre={selectedGenre} isModalOpen={playerModalOpen} onSetFeatured={setFeaturedMovie} /></TabPanel>
                 <TabPanel sx={{padding: 0}}><TVPage genres={tvGenres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
@@ -327,25 +416,44 @@ export default function App() {
                 </TabPanel>
                 <TabPanel sx={{padding: 0}}><ProfilePage /></TabPanel>
                 <TabPanel sx={{padding: 0}}><CollectionsPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedCollectionId={selectedCollectionId} /></TabPanel>
-                <TabPanel sx={{padding: 0}}><DetailsPage tmdbId={detailsTmdbId} itemTypeHint={detailsType} onPlay={handlePlayMovie} onSelect={handleSelectMovie} onSelectPerson={handleSelectPerson} onGoToCollections={handleGoToCollections} /></TabPanel>
+                {/* Details page converted to modal — removed page panel */}
                 <TabPanel><VideoPlayerPage playerType={playerType} params={playerParams} onBack={handleBackFromPlayer} /></TabPanel>
                 <TabPanel><PersonPage personId={selectedPersonId} onSelectWork={handleSelectMovie} /></TabPanel>
               </TabPanels>
             </div>
           {/* Modal removed — Play now opens the Player tab where `VideoPlayerPage` renders the embedded player */}
           </Tabs>
-      </ErrorBoundary>
-    </ChakraProvider>
-    {playerModalOpen && (
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setPlayerModalOpen(false)}>
-        <div style={{ position: 'relative', width: '70vw', height: 'calc(70vw * 9 / 16)', background: 'var(--surface-card)', borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.6)', overflow: 'hidden', zIndex: 100001 }} onClick={(e) => e.stopPropagation()}>
-          <button aria-label="Close player" onClick={() => setPlayerModalOpen(false)} style={{ position: 'absolute', right: 12, top: 12, zIndex: 10, background: 'rgba(255,255,255,0.06)', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: 6 }}>✕</button>
-          <div style={{ width: '100%', height: '100%' }}>
-            <VideoPlayer type={playerModalType} params={playerModalParams || { tmdbId: selectedTmdbId }} />
-          </div>
-        </div>
-      </div>
-    )}
+          {playerModalOpen && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setPlayerModalOpen(false)}>
+              <div style={{ position: 'relative', width: '70vw', height: 'calc(70vw * 9 / 16)', background: 'var(--surface-card)', borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.6)', overflow: 'hidden', zIndex: 100001 }} onClick={(e) => e.stopPropagation()}>
+                <button aria-label="Close player" onClick={() => setPlayerModalOpen(false)} style={{ position: 'absolute', right: 12, top: 12, zIndex: 10, background: 'rgba(255,255,255,0.06)', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: 6 }}>✕</button>
+                <div style={{ width: '100%', height: '100%' }}>
+                  <VideoPlayer type={playerModalType} params={playerModalParams || { tmdbId: selectedTmdbId }} />
+                </div>
+              </div>
+            </div>
+          )}
+                {detailsModalOpen && (
+                  <DetailsModal
+                    tmdbId={detailsModalTmdbId || undefined}
+                    itemTypeHint={detailsModalType || undefined}
+                    onPlay={handlePlayMovie}
+                    onSelect={(id, t) => { /* replace modal content by opening selected id */ handleSelectMovie(id, t); }}
+                    onSelectPerson={(pid) => { handleSelectPerson(pid); setDetailsModalOpen(false); }}
+                    onGoToCollections={(cid) => { handleGoToCollections(cid); setDetailsModalOpen(false); }}
+                    onClose={() => {
+                      setDetailsModalOpen(false);
+                      // resume global hero trailers when the modal closes
+                      try {
+                        const ctrl = (window as any).__appTrailerController;
+                        if (ctrl && typeof ctrl.resume === 'function') ctrl.resume();
+                        else window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
+                      } catch (e) { try { window.dispatchEvent(new CustomEvent('app:resume-hero-trailer')); } catch (e) { /* ignore */ } }
+                    }}
+                  />
+                )}
+        </ErrorBoundary>
+      </ChakraProvider>
     </>
   );
 }

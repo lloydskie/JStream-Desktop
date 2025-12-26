@@ -33,6 +33,21 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
     return () => { document.body.classList.remove('preview-open'); };
   }, [showPreviewModal]);
 
+  // Listen for app-level request to forcibly close any open preview modal
+  useEffect(() => {
+    function onClosePreviews() {
+      try { if (previewTimeoutRef.current) { window.clearTimeout(previewTimeoutRef.current); previewTimeoutRef.current = null; } } catch (e) {}
+      try { hoverTokenRef.current++; } catch (e) {}
+      try { setHoverIndex(null); } catch (e) {}
+      try { setHoverTrailerKey(null); } catch (e) {}
+      try { setShowPreviewModal(false); } catch (e) {}
+      try { setPreviewAnimating(false); } catch (e) {}
+      try { hoverTargetIdRef.current = null; } catch (e) {}
+    }
+    window.addEventListener('app:close-previews', onClosePreviews as EventListener);
+    return () => window.removeEventListener('app:close-previews', onClosePreviews as EventListener);
+  }, []);
+
   useEffect(() => {
     let mounted = true;
     async function load() {
@@ -413,11 +428,13 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
                 setHoverIndex(null);
                 setHoverTrailerKey(null);
                 setShowPreviewModal(false);
-                // resume hero trailer
+                // resume hero trailer (skip if details modal is open)
                 try {
-                  const ctrl = (window as any).__appTrailerController;
-                  if (ctrl && typeof ctrl.resume === 'function') ctrl.resume();
-                  else window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
+                  if (!(window as any).__heroModalOpen) {
+                    const ctrl = (window as any).__appTrailerController;
+                    if (ctrl && typeof ctrl.resume === 'function') ctrl.resume();
+                    else window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
+                  }
                 } catch (e) { window.dispatchEvent(new CustomEvent('app:resume-hero-trailer')); }
                 // clear hover target
                 try {
@@ -468,9 +485,11 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
                 setHoverTrailerKey(null);
                 // Resume global hero trailer when the modal is closed from the modal itself
                 try {
-                  const ctrl = (window as any).__appTrailerController;
-                  if (ctrl && typeof ctrl.resume === 'function') ctrl.resume();
-                  else window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
+                  if (!(window as any).__heroModalOpen) {
+                    const ctrl = (window as any).__appTrailerController;
+                    if (ctrl && typeof ctrl.resume === 'function') ctrl.resume();
+                    else window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
+                  }
                 } catch (e) { window.dispatchEvent(new CustomEvent('app:resume-hero-trailer')); }
               }, 220);
             }}
@@ -537,6 +556,7 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
                     <button className="preview-btn" aria-label="More info" onClick={(ev) => {
                       ev.stopPropagation();
                       const it = items[hoverIndex];
+                      try { window.dispatchEvent(new Event('app:close-previews')); } catch (e) {}
                       if (typeof onSelect === 'function' && it) {
                         onSelect(it.id, it.type);
                       } else {
