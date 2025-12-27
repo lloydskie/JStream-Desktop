@@ -1701,13 +1701,29 @@ select.search-input, select.input{ min-width: 64px }
   aspect-ratio: auto;
   max-height: none;
 }
+.player-modal-box.movie-mode webview.video-embed {
+  width: 100% !important;
+  height: 100% !important;
+  aspect-ratio: unset !important;
+  max-height: none !important;
+}
+/* Ensure the webview host uses flex layout so its internal shadow iframe can stretch */
+.player-modal-box.movie-mode webview.video-embed,
+.videoplayer-wrapper webview.video-embed,
+webview.video-embed {
+  display: flex !important;
+  align-items: stretch !important;
+  justify-content: stretch !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+}
 
 /* Ensure selector sits visually below the modal box when rendered outside it */
 .player-modal-overlay > .player-modal-selector{ margin-top: 12px; }
 
 /* Video aspect container and embed sizing to prevent clipping inside modal */
-.videoplayer-wrapper{ width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
-.video-aspect{ width:100%; max-width:100%; display:flex; align-items:center; justify-content:center; }
+.videoplayer-wrapper{ width:100%; height:100%; display:flex; align-items:stretch; justify-content:stretch; }
+.video-aspect{ width:100%; max-width:100%; display:flex; align-items:stretch; justify-content:stretch; height:100%; }
 .video-aspect .video-embed,
 .videoplayer-wrapper .video-embed{
   width:100%;

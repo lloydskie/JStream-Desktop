@@ -1,3 +1,14 @@
+// Expose absolute path to webview preload script
+import fs from 'fs';
+
+ipcMain.handle('get-webview-preload-path', async () => {
+  // Try to resolve the absolute path to webview-preload.js in public or src
+  const publicPath = path.join(app.getAppPath(), 'public', 'webview-preload.js');
+  const srcPath = path.join(app.getAppPath(), 'src', 'webview-preload.js');
+  if (fs.existsSync(publicPath)) return publicPath;
+  if (fs.existsSync(srcPath)) return srcPath;
+  return '';
+});
 import { app, BrowserWindow, ipcMain, session, BrowserView, screen } from 'electron';
 import * as http from 'http';
 import * as https from 'https';

@@ -10,7 +10,7 @@ interface VideoPlayerProps {
 export default function VideoPlayer({ type, params, player }: VideoPlayerProps) {
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [useWebview, setUseWebview] = useState(false);
+  const [useWebview, setUseWebview] = useState(type === 'tv');
   const lastSavedRef = React.useRef<number>(0);
   const webviewRef = React.useRef<any>(null);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
@@ -27,11 +27,9 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
     const tmdbId = params && (params.tmdbId || params.tmdb_id || params.id || params.itemId);
     const season = params && (params.season || params.season_number);
     const episode = params && (params.episode || params.episode_number);
-    // Normalize player name
     const pn = String(playerName || 'Aether');
     switch (pn) {
       case 'Boreal': {
-        // Vidfast: use vidfast.pro as canonical domain
         if (type === 'movie') {
           let u = `https://vidfast.pro/movie/${tmdbId}`;
           u += `?theme=${encodeURIComponent(String(color))}`;
@@ -39,7 +37,6 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
           if (wantAutoplayNext) u += `&autoplayNext=1`;
           return u;
         }
-        // tv
         if (season != null && episode != null) {
           let u = `https://vidfast.pro/tv/${tmdbId}/${season}/${episode}?theme=${encodeURIComponent(String(color))}`;
           if (wantAutoplay) u += `&autoplay=1`;
@@ -54,7 +51,6 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
         }
       }
       case 'Cygnus': {
-        // Vidsrc embed
         if (type === 'movie') {
           let u = `https://vidsrc-embed.ru/embed/movie/${tmdbId}`;
           if (wantAutoplay) u += `?autoplay=1`;
@@ -75,7 +71,6 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
         }
       }
       case 'Draco': {
-        // Vidlink
         if (type === 'movie') {
           let u = `https://vidlink.pro/movie/${tmdbId}`;
           if (wantAutoplay) u += `?autoplay=1`;
@@ -97,7 +92,6 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
       }
       case 'Aether':
       default: {
-        // Default: Videasy
         return buildVideasyUrl(config, type, params);
       }
     }
@@ -109,7 +103,6 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
       if (!mounted) return;
       try {
         const built = buildProviderUrl(config, type, params || {}, player);
-        // diagnostic: log the built url and params only when debug enabled
         try { if ((window as any).__JSTREAM_DEBUG) console.info('VideoPlayer: params ->', params); } catch(e){}
         try { if ((window as any).__JSTREAM_DEBUG) console.info('VideoPlayer: built URL ->', built); } catch(e){}
         setUrl(built);
@@ -143,14 +136,30 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
     if (!url) return;
     // Reset checked state while we validate headers for this URL
     setHeadersChecked(false);
+    // If we're already using the in-DOM webview or embed is known blocked, skip header checks
+    if (useWebview || embedBlocked) {
+      try { if ((window as any).__JSTREAM_DEBUG) console.info('VideoPlayer: skipping header checks (useWebview or embedBlocked)'); } catch(e){}
+      setHeadersChecked(true);
+      return;
+    }
+    try { if ((window as any).__JSTREAM_DEBUG) console.info('VideoPlayer: starting header check for URL:', url); } catch(e){}
     try {
       const check = (window as any).network && (window as any).network.checkUrlHeaders;
       if (typeof check === 'function') {
-        check(url).then((res: any) => {
+        // Race the header check against a short timeout so the UI doesn't hang
+        const headerPromise = new Promise<any>((resolve) => {
+          check(url).then(resolve).catch((e: any) => resolve({ error: String(e) }));
+        });
+        const timeout = new Promise<any>((resolve) => setTimeout(() => resolve({ timeout: true }), 3000));
+        Promise.race([headerPromise, timeout]).then((res: any) => {
           try { if ((window as any).__JSTREAM_DEBUG) console.info('VideoPlayer: checkUrlHeaders result ->', res); } catch(e){}
           if (!res) return;
           if (res.error) {
-            console.warn('checkUrlHeaders error', res.error);
+            if ((window as any).__JSTREAM_DEBUG) console.warn('checkUrlHeaders error', res.error);
+            return;
+          }
+          if (res.timeout) {
+            if ((window as any).__JSTREAM_DEBUG) console.warn('checkUrlHeaders timed out, proceeding with fallback');
             return;
           }
           const headers = res.headers || {};
@@ -168,13 +177,26 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
             if ((window as any).__JSTREAM_DEBUG) console.info('VideoPlayer: setting useWebview = true (csp)');
             setUseWebview(true);
           }
-          }).catch((e: any) => { if ((window as any).__JSTREAM_DEBUG) console.warn('checkUrlHeaders failed', e); }).finally(() => setHeadersChecked(true));
+        }).finally(() => setHeadersChecked(true));
+      } else {
+        // No header-check helper available in this environment — continue.
+        setHeadersChecked(true);
       }
     } catch (e) {
       if ((window as any).__JSTREAM_DEBUG) console.warn('checkUrlHeaders invocation failed', e);
       setHeadersChecked(true);
     }
-  }, [url]);
+  }, [url, useWebview, embedBlocked]);
+
+  // Safety fallback: if headersChecked remains false for too long, proceed anyway
+  useEffect(() => {
+    if (!url || headersChecked) return;
+    const t = setTimeout(() => {
+      try { if ((window as any).__JSTREAM_DEBUG) console.warn('VideoPlayer: headers check timed out (safety), proceeding'); } catch(e){}
+      setHeadersChecked(true);
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [url, headersChecked]);
 
   // Auto-create a BrowserView when the URL is available and headersChecked reports embeddable
   useEffect(() => {
@@ -187,17 +209,20 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
           if (!mounted) return;
           if (res && res.error) {
             setEmbedBlocked(true);
+            setUseWebview(true);
             if ((window as any).__JSTREAM_DEBUG) console.warn('playerView.create returned error', res.error);
           }
         }).catch((e: any) => {
           if (!mounted) return;
           setEmbedBlocked(true);
+          setUseWebview(true);
           if ((window as any).__JSTREAM_DEBUG) console.warn('playerView.create threw', e);
         });
       }
     } catch (e) {
       if ((window as any).__JSTREAM_DEBUG) console.warn('playerView.create invocation failed', e);
       setEmbedBlocked(true);
+      setUseWebview(true);
     }
     const resizeHandler = () => {
       try {
@@ -233,23 +258,161 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
         setEmbedBlocked(true);
       }
     }
+    function onDomReady() {
+      try {
+        const script = `(function(){
+          try{
+            function styleIframe(i){
+              try{
+                i.style.height='100%';
+                i.style.width='100%';
+                i.style.flex='1 1 auto';
+                i.style.border='0';
+                i.style.display='block';
+                i.setAttribute && i.setAttribute('allowfullscreen','');
+              }catch(e){}
+            }
+            function ensureAncestors(el){
+              try{
+                let cur = el.parentElement;
+                let depth = 0;
+                while(cur && depth < 10){
+                  try{
+                    const cs = window.getComputedStyle(cur);
+                    if (cs && cs.display === 'inline') cur.style.display = 'block';
+                    cur.style.height = '100%';
+                    cur.style.minHeight = '0';
+                    cur.style.flex = '1 1 auto';
+                    cur.style.boxSizing = 'border-box';
+                  }catch(e){}
+                  cur = cur.parentElement; depth++;
+                }
+              }catch(e){}
+            }
+            document.documentElement && (document.documentElement.style.height='100%');
+            document.body && (document.body.style.height='100%');
+            Array.from(document.querySelectorAll('iframe')).forEach(i=>{ styleIframe(i); ensureAncestors(i); });
+            const mo = new MutationObserver((mutations)=>{
+              for(const m of mutations){
+                for(const n of m.addedNodes || []){
+                  try{
+                    if(n && n.nodeType === 1){
+                      const el = n;
+                      if(el.tagName === 'IFRAME') { styleIframe(el); ensureAncestors(el); }
+                      Array.from(el.querySelectorAll && el.querySelectorAll('iframe') || []).forEach(fi=>{ styleIframe(fi); ensureAncestors(fi); });
+                    }
+                  }catch(e){}
+                }
+              }
+            });
+            mo.observe(document.documentElement || document.body, { childList: true, subtree: true });
+            setTimeout(()=>{ Array.from(document.querySelectorAll('iframe')).forEach(i=>{ styleIframe(i); ensureAncestors(i); }); }, 400);
+            // Aggressive override every 100ms to counter provider CSS
+            setInterval(()=>{
+              try{
+                document.documentElement && (document.documentElement.style.setProperty('height', '100%', 'important'));
+                document.body && (document.body.style.setProperty('height', '100%', 'important'));
+                Array.from(document.querySelectorAll('iframe')).forEach(i=>{
+                  i.style.setProperty('height', '100%', 'important');
+                  i.style.setProperty('width', '100%', 'important');
+                  i.style.setProperty('display', 'block', 'important');
+                  i.style.setProperty('border', '0', 'important');
+                  i.style.setProperty('flex', '1 1 auto', 'important');
+                });
+              }catch(e){}
+            }, 100);
+          }catch(e){ }
+          return true;
+        })();`;
+        // Try insertCSS first (preferred) then fallback to executeJavaScript
+        try {
+          if (typeof (w as any).insertCSS === 'function') {
+            const css = `* { box-sizing: border-box !important; } html, body { height: 100% !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; } iframe { height: 100% !important; width: 100% !important; display: block !important; border: 0 !important; flex: 1 1 auto !important; }`;
+            (w as any).insertCSS(css).then(() => {
+              console.info('VideoPlayer: insertCSS succeeded');
+            }).catch((e: any) => {
+              console.warn('VideoPlayer: insertCSS failed', e);
+            });
+          } else {
+            try { if ((window as any).__JSTREAM_DEBUG) console.info('VideoPlayer: insertCSS not available'); } catch(e) {}
+          }
+        } catch (e) {
+          try { if ((window as any).__JSTREAM_DEBUG) console.warn('VideoPlayer: insertCSS invocation error', e); } catch(e) {}
+        }
+        // Also run the JS styler as a fallback
+        if (typeof (w as any).executeJavaScript === 'function') {
+          (w as any).executeJavaScript(script).then(() => {
+            console.info('VideoPlayer: executeJavaScript succeeded');
+            try {
+              (w as any).executeJavaScript('document.title').then((t: any) => {
+                console.info('VideoPlayer: webview document.title ->', t);
+              }).catch((e: any) => console.warn('VideoPlayer: unable to read webview document.title', e));
+            } catch (e) { console.warn('VideoPlayer: executeJS for title failed', e); }
+          }).catch((e: any)=>{ console.warn('webview.executeJavaScript failed', e); });
+        } else {
+          console.warn('webview.executeJavaScript not available');
+        }
+        // Optionally open webview DevTools for debugging guest DOM/styles
+        try {
+          if ((window as any).__JSTREAM_DEBUG_OPEN_WEBVIEW_DEVTOOLS) {
+            try {
+              if (typeof (w as any).openDevTools === 'function') {
+                (w as any).openDevTools();
+                console.info('VideoPlayer: opened webview DevTools');
+              }
+            } catch (e) { console.warn('VideoPlayer: openDevTools failed', e); }
+          }
+        } catch (e) {}
+      } catch (e) { try{ if((window as any).__JSTREAM_DEBUG) console.warn('onDomReady injection failed', e); }catch(_){} }
+    }
     try {
       w.addEventListener('did-fail-load', onFail as any);
+      // Also inject styles once the guest DOM is ready so iframes inside the guest get height:100%
+      try { w.addEventListener('dom-ready', onDomReady as any); } catch (e) {}
     } catch (e) {
       // some environments expose different APIs; attempt to attach via ondid-fail-load
       try { (w as any)['ondid-fail-load'] = onFail; } catch (ex) {}
     }
     return () => {
       try { w.removeEventListener && w.removeEventListener('did-fail-load', onFail as any); } catch (e) {}
+      try { w.removeEventListener && w.removeEventListener('dom-ready', onDomReady as any); } catch (e) {}
     };
   }, [useWebview, url]);
+
+  // Apply webview preload path when it becomes available (exposed async from preload/main)
+  useEffect(() => {
+    let iv: any;
+    let applied = false;
+    const tryApply = () => {
+      try {
+        const p = (window as any).webviewPreloadPath;
+        const w = webviewRef.current;
+        if (p && w && !applied) {
+          try {
+            // set attribute and property where supported
+            try { w.setAttribute && w.setAttribute('preload', p); } catch (e) {}
+            try { (w as any).preload = p; } catch (e) {}
+            console.info('VideoPlayer: applied webview.preload ->', p);
+            // reload to ensure preload runs for current src
+            try { if (typeof w.reload === 'function') w.reload(); else if (typeof w.loadURL === 'function') w.loadURL(url); } catch (e) {}
+            applied = true;
+            clearInterval(iv);
+          } catch (e) { console.warn('VideoPlayer: failed to set webview.preload', e); }
+        }
+      } catch (e) { }
+    };
+    tryApply();
+    iv = setInterval(tryApply, 250);
+    return () => clearInterval(iv);
+  }, [webviewRef.current, url]);
 
   // Reset states when switching to a different video
   useEffect(() => {
     setEmbedBlocked(false);
-    setHeadersChecked(false);
+    setHeadersChecked(type === 'tv'); // Skip header checks for TV
     setError(null);
-    setUseWebview(false);
+    // Preserve the preference to use the in-DOM webview for TV content
+    setUseWebview(type === 'tv');
     setViewFullscreen(false);
   }, [type, params, player]);
 
@@ -405,6 +568,8 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
               className="video-embed"
               partition="persist:player"
               allowpopups
+              preload={(window as any).webviewPreloadPath || ''}
+              style={{ flex: '1 1 auto', width: '100%', height: '100%', border: 0 }}
             />
           </>
         ) : error ? (

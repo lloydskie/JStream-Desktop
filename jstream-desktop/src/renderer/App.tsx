@@ -363,106 +363,83 @@ export default function App() {
     return () => window.removeEventListener('keydown', keyHandler);
   }, [selectedTmdbId]);
 
-  // Close modal on Escape
-  useEffect(() => {
-    function escHandler(e: KeyboardEvent) {
-      if (e.key === 'Escape') setPlayerModalOpen(false);
-    }
-    window.addEventListener('keydown', escHandler);
-    return () => window.removeEventListener('keydown', escHandler);
-  }, []);
+                  return (
+            <>
+            <ChakraProvider value={defaultSystem}>
+              <ErrorBoundary>
+                {featuredMovie && <HeroBanner movie={featuredMovie} onPlay={handlePlayMovie} onMore={handleSelectMovie} fullBleed isModalOpen={playerModalOpen || activeIndex === 10} isVisible={activeIndex === 0} />}
+                <Tabs index={activeIndex} onChange={index => setActiveIndex(index)} isFitted variant="enclosed" isLazy lazyBehavior="unmount" style={{width: '100%'}}>
 
-  // Prevent background scrolling and interaction while modal is open
-  useEffect(() => {
-    const prevOverflow = document.body.style.overflow;
-    if (playerModalOpen || detailsModalOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = prevOverflow || '';
-    }
-    return () => { document.body.style.overflow = prevOverflow || ''; };
-  }, [playerModalOpen, detailsModalOpen]);
+                          {/* Header is portaled to #header-root so it can overlay the full-bleed hero without being constrained */}
+                          {(() => {
+                            const headerNode = typeof document !== 'undefined' ? document.getElementById('header-root') : null;
+                            const headerJsx = (
+                              <header className="app-header">
+                                <div className="brand"><div className="logo">JStream</div></div>
+                                <TabList mb="1em">
+                                  <Tab>Home</Tab>
+                                  <Tab>Shows</Tab>
+                                  <Tab>Movies</Tab>
+                                  <Tab>New & Popular</Tab>
+                                  <Tab>My List</Tab>
+                                  <Tab>Browse by Languages</Tab>
+                                </TabList>
+                                <div className="header-controls">
+                                  {/* Header search: expands inline when toggled. Typing will switch to Search tab. */}
+                                  {searchOpen ? (
+                                    <input
+                                      ref={(el) => { searchInputRef.current = el; if (el) el.focus(); }}
+                                      className={`header-search-input input ${searchOpen ? 'open' : ''}`}
+                                      placeholder="Titles, peoples, gneres"
+                                      value={headerSearchQuery}
+                                      onChange={(e) => {
+                                        const v = e.target.value;
+                                        setHeaderSearchQuery(v);
+                                        // If user starts typing, show SearchPage and remember previous tab
+                                        if (v && v.length > 0) {
+                                          if (activeIndex !== 6 && prevActiveIndex === null) setPrevActiveIndex(activeIndex);
+                                          setActiveIndex(6);
+                                        } else {
+                                          // If cleared while on Search, restore previous tab
+                                          if (activeIndex === 6 && prevActiveIndex !== null) {
+                                            setActiveIndex(prevActiveIndex);
+                                            setPrevActiveIndex(null);
+                                            setSearchOpen(false);
+                                          }
+                                        }
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Escape') {
+                                          setSearchOpen(false);
+                                        }
+                                      }}
+                                      onBlur={() => {
+                                        // close the inline input when it loses focus and is empty
+                                        if (!headerSearchQuery) setSearchOpen(false);
+                                      }}
+                                    />
+                                  ) : (
+                                    <button
+                                      className="search-btn button ghost"
+                                      title="Search"
+                                      onClick={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current && searchInputRef.current.focus(), 0); }}
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18,display:'block'}}>
+                                        <circle cx="11" cy="11" r="6" />
+                                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                                      </svg>
+                                    </button>
+                                  )}
 
-  // dedicated SearchPage handles queries
-
-  // full UI mode:
-
-  return (
-    <>
-    <ChakraProvider value={defaultSystem}>
-      <ErrorBoundary>
-        {featuredMovie && <HeroBanner movie={featuredMovie} onPlay={handlePlayMovie} onMore={handleSelectMovie} fullBleed isModalOpen={playerModalOpen || activeIndex === 10} isVisible={activeIndex === 0} />}
-        <Tabs index={activeIndex} onChange={index => setActiveIndex(index)} isFitted variant="enclosed" isLazy lazyBehavior="unmount" style={{width: '100%'}}>
-          {/* Header is portaled to #header-root so it can overlay the full-bleed hero without being constrained */}
-          {(() => {
-            const headerNode = typeof document !== 'undefined' ? document.getElementById('header-root') : null;
-            const headerJsx = (
-              <header className="app-header">
-                <div className="brand"><div className="logo">JStream</div></div>
-                <TabList mb="1em">
-                  <Tab>Home</Tab>
-                  <Tab>Shows</Tab>
-                  <Tab>Movies</Tab>
-                  <Tab>New & Popular</Tab>
-                  <Tab>My List</Tab>
-                  <Tab>Browse by Languages</Tab>
-                </TabList>
-                <div className="header-controls">
-                  {/* Header search: expands inline when toggled. Typing will switch to Search tab. */}
-                  {searchOpen ? (
-                    <input
-                      ref={(el) => { searchInputRef.current = el; if (el) el.focus(); }}
-                      className={`header-search-input input ${searchOpen ? 'open' : ''}`}
-                      placeholder="Titles, peoples, gneres"
-                      value={headerSearchQuery}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setHeaderSearchQuery(v);
-                        // If user starts typing, show SearchPage and remember previous tab
-                        if (v && v.length > 0) {
-                          if (activeIndex !== 6 && prevActiveIndex === null) setPrevActiveIndex(activeIndex);
-                          setActiveIndex(6);
-                        } else {
-                          // If cleared while on Search, restore previous tab
-                          if (activeIndex === 6 && prevActiveIndex !== null) {
-                            setActiveIndex(prevActiveIndex);
-                            setPrevActiveIndex(null);
-                            setSearchOpen(false);
-                          }
-                        }
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Escape') {
-                          setSearchOpen(false);
-                        }
-                      }}
-                      onBlur={() => {
-                        // close the inline input when it loses focus and is empty
-                        if (!headerSearchQuery) setSearchOpen(false);
-                      }}
-                    />
-                  ) : (
-                    <button
-                      className="search-btn button ghost"
-                      title="Search"
-                      onClick={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current && searchInputRef.current.focus(), 0); }}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{width:18,height:18,display:'block'}}>
-                        <circle cx="11" cy="11" r="6" />
-                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                      </svg>
-                    </button>
-                  )}
-
-                  <button className="profile-btn button ghost" title="Profile" onClick={() => setActiveIndex(7)}>
-                    <img src="/assets/profile-placeholder.svg" alt="Profile" style={{width:28,height:28,objectFit:'cover',borderRadius:6}} />
-                  </button>
-                  <button aria-label="Open menu" className="hamburger button ghost" onClick={() => setIsMobileMenuOpen(true)} style={{marginLeft:8}}>☰</button>
-                </div>
-              </header>
-            );
-            return headerNode ? createPortal(headerJsx, headerNode) : headerJsx;
-          })()}
+                                  <button className="profile-btn button ghost" title="Profile" onClick={() => setActiveIndex(7)}>
+                                    <img src="/assets/profile-placeholder.svg" alt="Profile" style={{width:28,height:28,objectFit:'cover',borderRadius:6}} />
+                                  </button>
+                                  <button aria-label="Open menu" className="hamburger button ghost" onClick={() => setIsMobileMenuOpen(true)} style={{marginLeft:8}}>☰</button>
+                                </div>
+                              </header>
+                            );
+                            return headerNode ? createPortal(headerJsx, headerNode) : headerJsx;
+                          })()}
 
                   {isMobileMenuOpen ? (
             <div className="mobile-menu-overlay surface-card" role="dialog" aria-modal={true}>
@@ -541,91 +518,77 @@ export default function App() {
           </Tabs>
           {playerModalOpen && (
             <div className="player-modal-overlay" onClick={() => setPlayerModalOpen(false)}>
-              <div className={`player-modal-box ${playerModalType === 'movie' ? 'movie-mode' : ''}`} onClick={(e) => e.stopPropagation()}>
+              <div className={`player-modal-box movie-mode`} onClick={(e) => e.stopPropagation()}>
                 <button aria-label="Close player" onClick={() => setPlayerModalOpen(false)} className="player-modal-close">✕</button>
                 {/* Main content: VideoPlayer on left, season/episode panel on right for TV */}
                 <div className="player-modal-content">
-                  <div className="player-modal-left">
-                    <VideoPlayer player={selectedPlayer} type={playerModalType} params={playerModalParams || { tmdbId: selectedTmdbId }} />
-                  </div>
-                  {playerModalType === 'tv' ? (
-                    <aside className="player-right-panel">
-                      <div style={{ padding: 12 }}>
-                        <div style={{ color: '#fff', fontWeight: 700, marginBottom: 8 }}>Seasons</div>
-                        <div style={{ marginBottom: 12 }}>
-                          {/* Season chip scroller: horizontal chips with left/right buttons and pager */}
-                          <div style={{ position: 'relative' }}>
-                            <button aria-label="Scroll seasons left" className="scroller-button left" onClick={() => {
-                              const el = (document.getElementById('season-scroller') as HTMLElement | null);
-                              if (el) el.scrollBy({ left: -(el.clientWidth * 0.7), behavior: 'smooth' });
-                            }}>‹</button>
-                            <div id="season-scroller" className="season-scroller" role="list">
-                              {(playerSeasons || []).map((s: any) => {
-                                const seasonVal = s.season_number || s.id;
-                                const label = s.name || `S${seasonVal}`;
-                                return (
-                                  <button key={String(seasonVal)} className={`season-chip ${playerSelectedSeason === Number(seasonVal) ? 'active' : ''}`} onClick={() => {
-                                    const val = Number(seasonVal);
-                                    setPlayerSelectedSeason(val);
-                                    try { setPlayerModalParams((p: any) => ({ ...(p || {}), season: val })); } catch (err) {}
-                                  }} role="listitem">
-                                    {`S${seasonVal}`}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            <button aria-label="Scroll seasons right" className="scroller-button right" onClick={() => {
-                              const el = (document.getElementById('season-scroller') as HTMLElement | null);
-                              if (el) el.scrollBy({ left: (el.clientWidth * 0.7), behavior: 'smooth' });
-                            }}>›</button>
-                            <div className="season-pager" id="season-pager" aria-hidden="true"></div>
-                          </div>
-                        </div>
-                        <div style={{ color: '#fff', fontWeight: 700, marginBottom: 8 }}>Episodes</div>
-                        <div className="episode-list-panel">
-                          {(playerSeasonEpisodes || []).map((ep: any) => (
-                            <div key={ep.episode_number || ep.id} className={`episode-item ${playerSelectedEpisode === (ep.episode_number || ep.id) ? 'active' : ''}`} onClick={() => {
-                                const val = ep.episode_number || ep.id;
-                                setPlayerSelectedEpisode(Number(val));
-                                try { setPlayerModalParams((p: any) => ({ ...(p || {}), episode: Number(val) })); } catch (err) {}
-                              }}>
-                              {ep.still_path ? (
-                                <img className="episode-thumb" src={`https://image.tmdb.org/t/p/w300${ep.still_path}`} alt={ep.name || `Episode ${ep.episode_number}`} />
-                              ) : (
-                                <div className="episode-thumb placeholder" />
-                              )}
-                              <div className="episode-meta">
-                                <div className="episode-title">{ep.episode_number ? `${ep.episode_number}. ${truncateWords(ep.name, 6)}` : truncateWords(ep.name, 6)}</div>
-                                <div className="episode-overview">{ep.overview ? (ep.overview.length > 140 ? `${ep.overview.slice(0,140)}…` : ep.overview) : ''}</div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </aside>
-                  ) : null}
+                    <div className="player-modal-left">
+                      <VideoPlayer player={selectedPlayer} type={playerModalType} params={playerModalParams || { tmdbId: selectedTmdbId }} />
+                    </div>
                 </div>
 
               </div>
               {/* Player selector bar centered below the modal box (outside the box) */}
-              <div className="player-modal-selector" onClick={(e) => e.stopPropagation()}>
-                <div style={{ color: '#fff', fontSize: 13, marginRight: 8 }}>Player:</div>
-                {(['Aether','Boreal','Cygnus','Draco'] as const).map((name) => (
-                  <button
-                    key={name}
-                    onClick={() => setSelectedPlayer(name)}
-                    className={`button ${selectedPlayer === name ? '' : 'ghost'}`}
-                    style={{
-                      padding: '6px 10px',
-                      borderRadius: 4,
-                      background: selectedPlayer === name ? '#E50914' : 'transparent',
-                      color: selectedPlayer === name ? '#fff' : undefined,
-                      border: selectedPlayer === name ? 'none' : '1px solid rgba(255,255,255,0.06)'
-                    }}
-                  >
-                    {name}
-                  </button>
-                ))}
+              <div className="player-modal-selector" onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ color: '#fff', fontSize: 13, marginRight: 8 }}>Player:</div>
+                  {(['Aether','Boreal','Cygnus','Draco'] as const).map((name) => (
+                    <button
+                      key={name}
+                      onClick={() => setSelectedPlayer(name)}
+                      className={`button ${selectedPlayer === name ? '' : 'ghost'}`}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 4,
+                        background: selectedPlayer === name ? '#E50914' : 'transparent',
+                        color: selectedPlayer === name ? '#fff' : undefined,
+                        border: selectedPlayer === name ? 'none' : '1px solid rgba(255,255,255,0.06)'
+                      }}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Inline season/episode selectors for TV (simple, no thumbnails) */}
+                {playerModalType === 'tv' ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <label style={{ color: '#fff', fontSize: 13, marginRight: 4 }}>Season</label>
+                    <select
+                      value={playerSelectedSeason ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value ? Number(e.target.value) : null;
+                        setPlayerSelectedSeason(val);
+                        try { setPlayerModalParams((p: any) => ({ ...(p || {}), season: val })); } catch (err) {}
+                      }}
+                      style={{ padding: '6px 8px', borderRadius: 6, background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.06)' }}
+                    >
+                      <option value="">Select season</option>
+                      {(playerSeasons || []).map((s: any) => {
+                        const seasonVal = s.season_number || s.id;
+                        return <option key={String(seasonVal)} value={seasonVal}>{s.name || `Season ${seasonVal}`}</option>;
+                      })}
+                    </select>
+
+                    <label style={{ color: '#fff', fontSize: 13, marginRight: 4 }}>Episode</label>
+                    <select
+                      value={playerSelectedEpisode ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value ? Number(e.target.value) : null;
+                        setPlayerSelectedEpisode(val);
+                        try { setPlayerModalParams((p: any) => ({ ...(p || {}), episode: val })); } catch (err) {}
+                      }}
+                      style={{ padding: '6px 8px', borderRadius: 6, background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.06)' }}
+                    >
+                      <option value="">Select episode</option>
+                      {(playerSeasonEpisodes || []).map((ep: any) => {
+                        const val = ep.episode_number || ep.id;
+                        const label = ep.episode_number ? `${ep.episode_number}. ${ep.name}` : (ep.name || `Episode ${val}`);
+                        return <option key={String(val)} value={val}>{label}</option>;
+                      })}
+                    </select>
+                  </div>
+                ) : null}
               </div>
             </div>
           )}
