@@ -244,10 +244,14 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
     };
   }, [useWebview, url]);
 
-  // Log render choice for debugging
+  // Reset states when switching to a different video
   useEffect(() => {
-    try { if ((window as any).__JSTREAM_DEBUG) console.info('VideoPlayer: render state ->', { url, useWebview, error }); } catch (e) {}
-  }, [url, useWebview, error]);
+    setEmbedBlocked(false);
+    setHeadersChecked(false);
+    setError(null);
+    setUseWebview(false);
+    setViewFullscreen(false);
+  }, [type, params, player]);
 
   // Load saved progress if any and prepare for initial seek
   useEffect(() => {

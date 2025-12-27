@@ -283,6 +283,30 @@ ipcMain.handle('player-view-create', async (event, urlString: string, opts: { bo
     if (!parentWin) return { error: 'no-parent-window' };
     const contentsId = (sender as any).id || parentWin.id;
 
+    // Close any existing player windows before creating a new one
+    try {
+      // Close any fullscreen windows that were created for player fullscreen
+      for (const [id, meta] of playerViewMeta.entries()) {
+        if (meta.fullscreenWindowId) {
+          try {
+            const win = BrowserWindow.fromId(meta.fullscreenWindowId);
+            if (win && !win.isDestroyed()) {
+              win.close();
+            }
+          } catch (e) {}
+        }
+      }
+      // Also close any windows created via open-player-window
+      const allWindows = BrowserWindow.getAllWindows();
+      for (const win of allWindows) {
+        if (win !== parentWin && !win.isDestroyed()) {
+          try { win.close(); } catch (e) {}
+        }
+      }
+    } catch (e) {
+      console.error('Failed to close existing player windows', e);
+    }
+
     // If an existing view is present for this contents, destroy it first
     const existing = playerViews.get(contentsId);
     if (existing) {
