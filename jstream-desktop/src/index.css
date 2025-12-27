@@ -16,6 +16,7 @@
   --movie-card-width: 200px; /* default card width used in rows, override if row sizing changes */
   /* width of the overlay scroll buttons; used to align snap positions to button edges */
   --scroller-button-width: 96px;
+  --season-chip-height: 40px;
 }
 
 /* Ensure the portal header root is fixed to the top so the navbar stays at the top of the viewport */
@@ -1164,7 +1165,7 @@ button:active, .button:active, .btn:active, .menu-link:active, .profile-btn:acti
 /* Dropdowns & contextual menus */
 .dropdown{ position:relative; }
 .dropdown-toggle{ display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:6px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04); color:#fff; cursor:pointer; }
-.dropdown-menu{ background: linear-gradient(180deg, rgba(17,17,18,0.98), rgba(8,8,9,0.98)); border-radius:8px; box-shadow:0 12px 40px rgba(0,0,0,0.6); padding:6px; z-index:1200; border:1px solid rgba(255,255,255,0.03); box-sizing: border-box; max-width:420px; }
+.dropdown-menu{ background: linear-gradient(180deg, rgba(17,17,18,0.98), rgba(8,8,9,0.98)); border-radius:8px; box-shadow:0 12px 40px rgba(0,0,0,0.6); padding:6px; z-index:200000; border:1px solid rgba(255,255,255,0.03); box-sizing: border-box; max-width:420px; }
 .dropdown-item{ padding:8px 10px; border-radius:6px; color:#e6e6e6; cursor:pointer; }
 .dropdown-item:hover{ background: rgba(229,9,20,0.06); color:#fff; }
 
@@ -1574,6 +1575,223 @@ select.search-input, select.input{ min-width: 64px }
     min-width: 120px;
     max-width: 120px;
   }
+}
+
+
+
+
+
+/* Player modal styles for new TV layout */
+.player-modal-overlay{
+  position: fixed;
+  inset: 0;
+  /* Stack the modal box and the selector vertically so the selector
+     appears below the modal box instead of to the right. */
+  display:flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items:center;
+  justify-content:center;
+  background: rgba(0,0,0,0.85);
+  z-index: 100000;
+}
+.player-modal-box{
+  position: relative;
+  width: clamp(680px, 80vw, 1200px);
+  height: clamp(380px, 70vh, 820px);
+  background: var(--surface-card, var(--card));
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.player-modal-close{
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 20;
+  background: rgba(255,255,255,0.06);
+  color: #fff;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.player-modal-content{
+  display:flex;
+  flex:1 1 auto;
+  gap: 12px;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+/* Ensure the content flex container can shrink so children with overflow:auto
+   compute a proper height inside the modal (fixes blocked inner scrolling) */
+.player-modal-content { min-height: 0; }
+.player-modal-left{
+  flex: 1 1 65%;
+  min-width: 360px;
+  background: transparent;
+  display:flex;
+  align-items:stretch;
+}
+.player-modal-left > *{ width:100%; height:100%; }
+.player-right-panel{
+  flex: 0 0 32%;
+  max-width: 420px;
+  background: rgba(0,0,0,0.24);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* inner area will scroll */
+  /* allow this flex item to shrink properly so children with overflow:auto
+     can receive a computed height (fixes non-scrollable inner containers) */
+  min-height: 0;
+  /* ensure the panel stretches to the full height of the content row */
+  height: 100%;
+}
+.player-right-panel > div { display:flex; flex-direction:column; height:100%; min-height: 0; }
+.player-right-panel > div .episode-list-panel { flex: 1 1 auto; overflow:auto; min-height: 0; }
+.episode-list-panel{ display:flex; flex-direction:column; gap:10px; padding:8px; overflow:auto; flex: 1 1 auto; }
+.episode-item{ display:flex; gap:12px; align-items:flex-start; padding:10px; border-radius:8px; cursor:pointer; background: transparent; border: 1px solid rgba(255,255,255,0.02); }
+.episode-item:hover{ background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.06)); transform: translateY(-2px); }
+.episode-item.active{ background: rgba(229,9,20,0.08); border-color: rgba(229,9,20,0.12); }
+.episode-thumb{ width: 60px; height: 40px; object-fit: cover; border-radius: 6px; flex: 0 0 60px; }
+.episode-thumb.placeholder{ background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.06)); display:block; width:60px; height:40px; }
+
+/* Stronger selector to override older .episode-item img rule that sets larger dimensions */
+.player-right-panel .episode-thumb,
+.player-right-panel .episode-thumb.placeholder {
+  width: 60px !important;
+  height: 40px !important;
+  flex: 0 0 60px !important;
+}
+.episode-meta{ flex:1 1 auto; min-width: 0; }
+.episode-title{ font-weight:700; color:#fff; margin-bottom:6px; }
+.episode-overview{ color: var(--muted); font-size:13px; line-height:1.35 }
+
+/* Centered player selector at bottom of modal */
+.player-modal-selector{
+  /* Keep selector in the normal document flow so it sits immediately
+     below the player content. Using relative positioning and margin
+     centers it while allowing the player content to size correctly. */
+  position: relative;
+  display:flex;
+  gap:12px;
+  align-items:center;
+  justify-content:center;
+  margin: 12px auto 0;
+  z-index: 30;
+  background: #181818;
+  padding: 8px 12px;
+  border-radius: 9px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+}
+
+/* Movie-mode: make the embedded player fill the modal box */
+.player-modal-box.movie-mode { padding: 0; }
+.player-modal-box.movie-mode .player-modal-content { padding: 0; }
+.player-modal-box.movie-mode .player-modal-left{ min-width: auto; height: 100%; align-items: stretch; }
+.player-modal-box.movie-mode .video-aspect{ width:100%; height:100%; display:block; }
+.player-modal-box.movie-mode .video-aspect .video-embed,
+.player-modal-box.movie-mode .videoplayer-wrapper .video-embed{
+  width:100%;
+  height:100%;
+  aspect-ratio: auto;
+  max-height: none;
+}
+
+/* Ensure selector sits visually below the modal box when rendered outside it */
+.player-modal-overlay > .player-modal-selector{ margin-top: 12px; }
+
+/* Video aspect container and embed sizing to prevent clipping inside modal */
+.videoplayer-wrapper{ width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
+.video-aspect{ width:100%; max-width:100%; display:flex; align-items:center; justify-content:center; }
+.video-aspect .video-embed,
+.videoplayer-wrapper .video-embed{
+  width:100%;
+  height:100%;
+  max-height:100%;
+  aspect-ratio: 16/9;
+  border:0;
+  display:block;
+}
+.video-aspect .webview-badge{ position:absolute; top:8px; right:8px; z-index:5; background: rgba(0,0,0,0.45); color:#fff; padding:6px 10px; border-radius:6px; font-size:12px }
+
+/* Season scroller chips */
+.season-scroller{
+  display:flex;
+  gap:8px;
+  overflow-x:auto;
+  padding:6px calc(var(--season-chip-height) + 12px); /* leave room for scroll buttons */
+  scroll-behavior: smooth;
+  align-items:center;
+}
+.season-scroller::-webkit-scrollbar{ height:8px; }
+.season-scroller{-ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.season-scroller::-webkit-scrollbar { display: none; height: 0; width: 0; }
+.season-chip{
+  background: rgba(255,255,255,0.03);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.04);
+  padding: 0 12px;
+  height: var(--season-chip-height);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px; /* make chips square-ish */
+  font-weight:700;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.season-chip.active{ background: rgba(229,9,20,0.12); border-color: rgba(229,9,20,0.14); }
+.scroller-button{
+  position:absolute;
+  top:50%;
+  transform: translateY(-50%);
+  width: var(--season-chip-height);
+  height: var(--season-chip-height);
+  border-radius: 6px; /* square corners */
+  background: rgba(0,0,0,0.44);
+  color:#fff;
+  border:1px solid rgba(255,255,255,0.04);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index: 5;
+  cursor:pointer;
+  /* Prevent any transform transition so buttons don't animate vertically */
+  transition: none !important;
+}
+.scroller-button.left{ left:6px; }
+.scroller-button.right{ right:6px; }
+
+/* Ensure hover/active states do not change vertical position */
+.scroller-button:hover,
+.scroller-button:active { transform: translateY(-50%); }
+
+/* Simple bar pager — JS can populate active state by toggling .bar.active */
+.season-pager{
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: -12px;
+  display:flex;
+  gap:8px;
+  align-items:center;
+  justify-content:center;
+}
+.season-pager .bar{ width:20px; height:6px; background: rgba(255,255,255,0.12); border-radius:3px; }
+.season-pager .bar.active{ background: rgba(229,9,20,0.95); }
+
+@media (max-width: 900px){
+  .player-modal-content{ flex-direction:column; }
+  .player-modal-left{ min-width: auto; height: 60vh }
+  .player-right-panel{ flex: 0 0 auto; max-height: 240px; }
+  .player-modal-box{ width: calc(100vw - 28px); height: calc(100vh - 28px); }
 }
 
 

@@ -3,6 +3,19 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './renderer/App';
 
+// Suppress noisy console output (keep warnings/errors). Set `window.__JSTREAM_DEBUG = true` to re-enable.
+try {
+  const win: any = window;
+  const keep = Boolean(win && win.__JSTREAM_DEBUG);
+  if (!keep) {
+    // silence common noisy methods in renderer (including warnings)
+    console.debug = () => {};
+    console.log = () => {};
+    console.info = () => {};
+    console.warn = () => {};
+  }
+} catch (e) { /* ignore */ }
+
 // Early wrapper for __appTrailerController to block direct resume() calls
 // while a details modal is open. Placing here ensures it runs before
 // other modules that may assign the controller.

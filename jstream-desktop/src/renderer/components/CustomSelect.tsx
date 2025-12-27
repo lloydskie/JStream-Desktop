@@ -89,8 +89,42 @@ export default function CustomSelect({
               left = Math.max(pad + window.scrollX, window.innerWidth + window.scrollX - width - pad);
             }
 
-            const top = r.bottom + window.scrollY + 6;
-            setMenuStyle({ top, left, width });
+            // measure menu height to decide whether to place below or above toggle
+            let measuredHeight = 0;
+            try {
+              // create measurement node again to get height (we removed earlier)
+              const meas2 = document.createElement('div');
+              meas2.style.position = 'fixed';
+              meas2.style.left = '0';
+              meas2.style.top = '0';
+              meas2.style.visibility = 'hidden';
+              meas2.style.pointerEvents = 'none';
+              meas2.style.display = 'inline-block';
+              meas2.style.font = getComputedStyle(toggleRef.current!).font || '';
+              meas2.className = 'dropdown-menu';
+              document.body.appendChild(meas2);
+              for (const o of options) {
+                const it = document.createElement('div');
+                it.className = 'dropdown-item';
+                it.style.display = 'block';
+                it.style.whiteSpace = 'nowrap';
+                it.textContent = String(o.label);
+                meas2.appendChild(it);
+              }
+              measuredHeight = Math.min(meas2.scrollHeight, Math.round(window.innerHeight * 0.7));
+              document.body.removeChild(meas2);
+            } catch (e) { /* ignore measurement failures */ }
+
+            // decide whether to open below or above the toggle depending on space
+            const spaceBelow = window.innerHeight - r.bottom;
+            const spaceAbove = r.top;
+            let top = r.bottom + window.scrollY + 6;
+            if (measuredHeight && measuredHeight > spaceBelow && spaceAbove > spaceBelow) {
+              // open above toggle
+              top = Math.max(8 + window.scrollY, r.top + window.scrollY - measuredHeight - 6);
+            }
+
+            setMenuStyle({ top, left, width, maxHeight: Math.min(measuredHeight || Math.round(window.innerHeight * 0.44), Math.round(window.innerHeight * 0.72)) });
           }
           return next;
         });

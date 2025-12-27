@@ -17,6 +17,7 @@ import PersonPage from './PersonPage';
 import ContinueWatching from './components/ContinueWatching';
 import TopSearches from './components/TopSearches';
 import HeroBanner from './components/HeroBanner';
+import CustomSelect from './components/CustomSelect';
 import { useState, useEffect } from 'react';
 // search UI removed from header per request
 import { fetchTMDB } from '../utils/tmdbClient';
@@ -113,7 +114,105 @@ export default function App() {
   const [playerModalOpen, setPlayerModalOpen] = useState(false);
   const [playerModalType, setPlayerModalType] = useState<'movie'|'tv'>('movie');
   const [playerModalParams, setPlayerModalParams] = useState<Record<string, any> | null>(null);
+  const [selectedPlayer, setSelectedPlayer] = useState<'Aether'|'Boreal'|'Cygnus'|'Draco'>('Aether');
   const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(null);
+  // Player modal TV selectors
+  const [playerSeasons, setPlayerSeasons] = useState<any[] | null>(null);
+  const [playerSeasonEpisodes, setPlayerSeasonEpisodes] = useState<any[] | null>(null);
+  const [playerSelectedSeason, setPlayerSelectedSeason] = useState<number | null>(null);
+  const [playerSelectedEpisode, setPlayerSelectedEpisode] = useState<number | null>(null);
+  // Fetch seasons when TV player opens
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        if (!playerModalOpen || playerModalType !== 'tv') return;
+        const tmdbId = playerModalParams && (playerModalParams.tmdbId || playerModalParams.id || playerModalParams.showId);
+        if (!tmdbId) return;
+        const details = await fetchTMDB(`tv/${tmdbId}`);
+        if (!mounted) return;
+        const seasons = details.seasons || [];
+        setPlayerSeasons(seasons);
+        // default to Season 1 if available, otherwise first season
+        const hasSeason1 = seasons.find((s: any) => Number(s.season_number) === 1);
+        const defaultSeason = hasSeason1 ? 1 : (seasons[0] && (seasons[0].season_number || seasons[0].id)) || 1;
+        const initialSeason = (playerModalParams && (playerModalParams.season || playerModalParams.season_number)) || defaultSeason;
+        if (initialSeason) {
+          const seasonNum = Number(initialSeason);
+          setPlayerSelectedSeason(seasonNum);
+          try { setPlayerModalParams((p: any) => ({ ...(p || {}), season: seasonNum })); } catch (err) { }
+        }
+      } catch (e) {
+        // ignore
+      }
+    })();
+    return () => { mounted = false; };
+  }, [playerModalOpen, playerModalType, playerModalParams]);
+
+  // Fetch episodes for selected season
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        if (!playerModalOpen || playerModalType !== 'tv' || !playerSelectedSeason) {
+          setPlayerSeasonEpisodes([]);
+          return;
+        }
+        const tmdbId = playerModalParams && (playerModalParams.tmdbId || playerModalParams.id || playerModalParams.showId);
+        if (!tmdbId) return;
+        const seasonData = await fetchTMDB(`tv/${tmdbId}/season/${playerSelectedSeason}`);
+        if (!mounted) return;
+        const episodes = seasonData.episodes || [];
+        setPlayerSeasonEpisodes(episodes);
+        // default to Episode 1 if available, otherwise first episode
+        const hasEp1 = episodes.find((ep: any) => Number(ep.episode_number) === 1);
+        const defaultEp = hasEp1 ? (episodes.find((ep: any) => Number(ep.episode_number) === 1).episode_number) : (episodes[0] && (episodes[0].episode_number || episodes[0].id)) || 1;
+        const initialEp = (playerModalParams && (playerModalParams.episode || playerModalParams.episode_number)) || defaultEp;
+        if (initialEp) {
+          const epNum = Number(initialEp);
+          setPlayerSelectedEpisode(epNum);
+          try { setPlayerModalParams((p: any) => ({ ...(p || {}), episode: epNum })); } catch (err) { }
+        }
+      } catch (e) {
+        // ignore
+      }
+    })();
+    return () => { mounted = false; };
+  }, [playerModalOpen, playerModalType, playerSelectedSeason, playerModalParams]);
+  
+  // Season scroller pager state: update pager bars based on scroll
+  React.useEffect(() => {
+    const scroller = document.getElementById('season-scroller');
+    const pager = document.getElementById('season-pager');
+    if (!scroller || !pager) return;
+    function updatePager() {
+      const pageWidth = scroller.clientWidth || 1;
+      const total = Math.max(1, Math.ceil(scroller.scrollWidth / pageWidth));
+      // Ensure pager has correct number of bars
+      if (pager.childElementCount !== total) {
+        pager.innerHTML = '';
+        for (let i = 0; i < total; i++) {
+          const bar = document.createElement('div');
+          bar.className = 'bar';
+          pager.appendChild(bar);
+        }
+      }
+      const active = Math.min(total - 1, Math.round(scroller.scrollLeft / pageWidth));
+      Array.from(pager.children).forEach((c, idx) => c.classList.toggle('active', idx === active));
+    }
+    updatePager();
+    scroller.addEventListener('scroll', updatePager, { passive: true });
+    window.addEventListener('resize', updatePager);
+    return () => { scroller.removeEventListener('scroll', updatePager); window.removeEventListener('resize', updatePager); };
+  }, [playerSeasons]);
+
+  // Helper to truncate a string to a limited number of words
+  function truncateWords(input?: string | null, maxWords: number = 6) {
+    if (!input) return '';
+    const parts = String(input).trim().split(/\s+/);
+    if (parts.length <= maxWords) return parts.join(' ');
+    return parts.slice(0, maxWords).join(' ') + '…';
+  }
   // header search removed — SearchPage provides dedicated search UI
   const [genres, setGenres] = useState<any[]>([]);
   const [tvGenres, setTvGenres] = useState<any[]>([]);
@@ -207,6 +306,18 @@ export default function App() {
     // Open the player in a fullscreen modal (user requested modal iframe)
     setPlayerModalType(type);
     setPlayerModalParams(combined);
+    // initialize player season/episode state from params if present
+    try {
+      if (type === 'tv') {
+        const s = params && (params.season || params.season_number || params.seasonNum);
+        const e = params && (params.episode || params.episode_number || params.ep);
+        setPlayerSelectedSeason(s ? Number(s) : null);
+        setPlayerSelectedEpisode(e ? Number(e) : null);
+      } else {
+        setPlayerSelectedSeason(null);
+        setPlayerSelectedEpisode(null);
+      }
+    } catch (err) { /* ignore */ }
     setPlayerModalOpen(true);
     try { (window as any).database.setPersonalization('last_selected_movie', idStr); } catch(e) { /* ignore */ }
     // Allow DetailsModal cleanup to finish without suppressing future resumes.
@@ -353,7 +464,7 @@ export default function App() {
             return headerNode ? createPortal(headerJsx, headerNode) : headerJsx;
           })()}
 
-          {isMobileMenuOpen ? (
+                  {isMobileMenuOpen ? (
             <div className="mobile-menu-overlay surface-card" role="dialog" aria-modal={true}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div style={{color:'#fff',fontSize:18}}>Menu</div>
@@ -362,10 +473,15 @@ export default function App() {
               <div style={{display:'flex',flexDirection:'column',gap:12}}>
                 <div>
                   <label style={{color:'#fff',fontSize:12}}>Genre</label>
-                  <select className="genre-select" value={selectedGenre} onChange={e=> { const v = e.target.value; setSelectedGenre(v? parseInt(v): ''); }} aria-label="Genre select mobile">
-                    <option value="">All genres</option>
-                    {genres.map(g=> (<option key={g.id} value={g.id}>{g.name}</option>))}
-                  </select>
+                  <div style={{marginTop:6}}>
+                    <CustomSelect
+                      value={selectedGenre === '' ? '' : selectedGenre}
+                      options={[{ value: '', label: 'All genres' }, ...(genres || []).map((g: any) => ({ value: g.id, label: g.name }))]}
+                      onChange={(v) => { const val = v === '' ? '' : Number(v); setSelectedGenre(val === '' ? '' : val); }}
+                      placeholder="All genres"
+                      id="mobile-genre-select"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label style={{color:'#fff',fontSize:12}}>Search</label>
@@ -424,12 +540,92 @@ export default function App() {
           {/* Modal removed — Play now opens the Player tab where `VideoPlayerPage` renders the embedded player */}
           </Tabs>
           {playerModalOpen && (
-            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setPlayerModalOpen(false)}>
-              <div style={{ position: 'relative', width: '70vw', height: 'calc(70vw * 9 / 16)', background: 'var(--surface-card)', borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.6)', overflow: 'hidden', zIndex: 100001 }} onClick={(e) => e.stopPropagation()}>
-                <button aria-label="Close player" onClick={() => setPlayerModalOpen(false)} style={{ position: 'absolute', right: 12, top: 12, zIndex: 10, background: 'rgba(255,255,255,0.06)', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: 6 }}>✕</button>
-                <div style={{ width: '100%', height: '100%' }}>
-                  <VideoPlayer type={playerModalType} params={playerModalParams || { tmdbId: selectedTmdbId }} />
+            <div className="player-modal-overlay" onClick={() => setPlayerModalOpen(false)}>
+              <div className={`player-modal-box ${playerModalType === 'movie' ? 'movie-mode' : ''}`} onClick={(e) => e.stopPropagation()}>
+                <button aria-label="Close player" onClick={() => setPlayerModalOpen(false)} className="player-modal-close">✕</button>
+                {/* Main content: VideoPlayer on left, season/episode panel on right for TV */}
+                <div className="player-modal-content">
+                  <div className="player-modal-left">
+                    <VideoPlayer player={selectedPlayer} type={playerModalType} params={playerModalParams || { tmdbId: selectedTmdbId }} />
+                  </div>
+                  {playerModalType === 'tv' ? (
+                    <aside className="player-right-panel">
+                      <div style={{ padding: 12 }}>
+                        <div style={{ color: '#fff', fontWeight: 700, marginBottom: 8 }}>Seasons</div>
+                        <div style={{ marginBottom: 12 }}>
+                          {/* Season chip scroller: horizontal chips with left/right buttons and pager */}
+                          <div style={{ position: 'relative' }}>
+                            <button aria-label="Scroll seasons left" className="scroller-button left" onClick={() => {
+                              const el = (document.getElementById('season-scroller') as HTMLElement | null);
+                              if (el) el.scrollBy({ left: -(el.clientWidth * 0.7), behavior: 'smooth' });
+                            }}>‹</button>
+                            <div id="season-scroller" className="season-scroller" role="list">
+                              {(playerSeasons || []).map((s: any) => {
+                                const seasonVal = s.season_number || s.id;
+                                const label = s.name || `S${seasonVal}`;
+                                return (
+                                  <button key={String(seasonVal)} className={`season-chip ${playerSelectedSeason === Number(seasonVal) ? 'active' : ''}`} onClick={() => {
+                                    const val = Number(seasonVal);
+                                    setPlayerSelectedSeason(val);
+                                    try { setPlayerModalParams((p: any) => ({ ...(p || {}), season: val })); } catch (err) {}
+                                  }} role="listitem">
+                                    {`S${seasonVal}`}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <button aria-label="Scroll seasons right" className="scroller-button right" onClick={() => {
+                              const el = (document.getElementById('season-scroller') as HTMLElement | null);
+                              if (el) el.scrollBy({ left: (el.clientWidth * 0.7), behavior: 'smooth' });
+                            }}>›</button>
+                            <div className="season-pager" id="season-pager" aria-hidden="true"></div>
+                          </div>
+                        </div>
+                        <div style={{ color: '#fff', fontWeight: 700, marginBottom: 8 }}>Episodes</div>
+                        <div className="episode-list-panel">
+                          {(playerSeasonEpisodes || []).map((ep: any) => (
+                            <div key={ep.episode_number || ep.id} className={`episode-item ${playerSelectedEpisode === (ep.episode_number || ep.id) ? 'active' : ''}`} onClick={() => {
+                                const val = ep.episode_number || ep.id;
+                                setPlayerSelectedEpisode(Number(val));
+                                try { setPlayerModalParams((p: any) => ({ ...(p || {}), episode: Number(val) })); } catch (err) {}
+                              }}>
+                              {ep.still_path ? (
+                                <img className="episode-thumb" src={`https://image.tmdb.org/t/p/w300${ep.still_path}`} alt={ep.name || `Episode ${ep.episode_number}`} />
+                              ) : (
+                                <div className="episode-thumb placeholder" />
+                              )}
+                              <div className="episode-meta">
+                                <div className="episode-title">{ep.episode_number ? `${ep.episode_number}. ${truncateWords(ep.name, 6)}` : truncateWords(ep.name, 6)}</div>
+                                <div className="episode-overview">{ep.overview ? (ep.overview.length > 140 ? `${ep.overview.slice(0,140)}…` : ep.overview) : ''}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </aside>
+                  ) : null}
                 </div>
+
+              </div>
+              {/* Player selector bar centered below the modal box (outside the box) */}
+              <div className="player-modal-selector" onClick={(e) => e.stopPropagation()}>
+                <div style={{ color: '#fff', fontSize: 13, marginRight: 8 }}>Player:</div>
+                {(['Aether','Boreal','Cygnus','Draco'] as const).map((name) => (
+                  <button
+                    key={name}
+                    onClick={() => setSelectedPlayer(name)}
+                    className={`button ${selectedPlayer === name ? '' : 'ghost'}`}
+                    style={{
+                      padding: '6px 10px',
+                      borderRadius: 4,
+                      background: selectedPlayer === name ? '#E50914' : 'transparent',
+                      color: selectedPlayer === name ? '#fff' : undefined,
+                      border: selectedPlayer === name ? 'none' : '1px solid rgba(255,255,255,0.06)'
+                    }}
+                  >
+                    {name}
+                  </button>
+                ))}
               </div>
             </div>
           )}

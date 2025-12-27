@@ -106,6 +106,42 @@ contextBridge.exposeInMainWorld('playerWindow', {
   open: (u: string) => ipcRenderer.invoke('open-player-window', u),
 });
 
+// BrowserView player API: create an overlay BrowserView attached to the app window
+contextBridge.exposeInMainWorld('playerView', {
+  create: (u: string, opts?: { bounds?: { x: number, y: number, width: number, height: number } }) => ipcRenderer.invoke('player-view-create', u, opts || {}),
+  destroy: () => ipcRenderer.invoke('player-view-destroy'),
+  setBounds: (b: { x: number, y: number, width: number, height: number }) => ipcRenderer.invoke('player-view-set-bounds', b),
+});
+
+// Events emitted by main about player view state (fullscreen changes)
+contextBridge.exposeInMainWorld('playerViewEvents', {
+  onFullscreenChange: (cb: (isFullscreen: boolean) => void) => {
+    const listener = (_ev: any, val: any) => {
+      try { cb(Boolean(val)); } catch (e) {}
+    };
+    ipcRenderer.on('player-view-fullscreen', listener);
+    return () => { try { ipcRenderer.removeListener('player-view-fullscreen', listener); } catch (e) {} };
+  },
+  onFullscreenRequest: (cb: (url: string) => void) => {
+    const listener = (_ev: any, url: string) => {
+      try { cb(url); } catch (e) {}
+    };
+    ipcRenderer.on('player-view-fullscreen-request', listener);
+    return () => { try { ipcRenderer.removeListener('player-view-fullscreen-request', listener); } catch (e) {} };
+  }
+});
+
+// Ensure any open player BrowserView is destroyed when the renderer is unloaded/reloaded
+try {
+  if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', () => {
+      try { ipcRenderer.invoke('player-view-destroy'); } catch (e) { }
+    });
+  }
+} catch (e) {
+  // ignore
+}
+
 // TMDB proxy exposed to renderer. Use IPC so the API key stays in main process.
 contextBridge.exposeInMainWorld('tmdb', {
   request: (endpoint: string, params?: Record<string, any>) => ipcRenderer.invoke('tmdb-request', endpoint, params || {}),

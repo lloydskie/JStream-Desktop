@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session } from 'electron';
+import { app, BrowserWindow, ipcMain, session, BrowserView, screen } from 'electron';
 import * as http from 'http';
 import * as https from 'https';
 import * as zlib from 'zlib';
@@ -115,6 +115,32 @@ const createWindow = () => {
     },
   });
 
+  // Close player windows when main window gains focus
+  mainWindow.on('focus', () => {
+    try {
+      // Close any fullscreen windows that were created for player fullscreen
+      for (const [id, meta] of playerViewMeta.entries()) {
+        if (meta.fullscreenWindowId) {
+          try {
+            const win = BrowserWindow.fromId(meta.fullscreenWindowId);
+            if (win && !win.isDestroyed()) {
+              win.close();
+            }
+          } catch (e) {}
+        }
+      }
+      // Also close any windows created via open-player-window
+      const allWindows = BrowserWindow.getAllWindows();
+      for (const win of allWindows) {
+        if (win !== mainWindow && !win.isDestroyed()) {
+          try { win.close(); } catch (e) {}
+        }
+      }
+    } catch (e) {
+      console.error('Failed to close player windows on focus', e);
+    }
+  });
+
   // and load the index.html of the app.
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
@@ -150,20 +176,12 @@ app.on('ready', () => {
     console.warn('Adblock: failed to register webRequest handler', e);
   }
   // Global popup/window-open handler: deny new windows when popupBlocking is enabled.
-  // This covers `window.open` and most webview/new-window cases by applying the policy
-  // to every created WebContents.
   app.on('web-contents-created', (event, contents) => {
     try {
-      // Prefer the modern API
       contents.setWindowOpenHandler(({ url, disposition, referrer, features }) => {
         try {
-          // If popup blocking is enabled, deny all new windows that look like popups
           if (adblock.popupBlocking) {
-            // If it's a user-intended navigation (e.g., target=_blank from a user click)
-            // you can refine this by checking `disposition` or `referrer`.
-            // Here we block by default; if the target URL matches ad rules, definitely deny.
             if (adblock.matches(url)) return { action: 'deny' };
-            // Deny all other programmatic attempts to open a new window while popupBlocking is on
             return { action: 'deny' };
           }
         } catch (e) {
@@ -172,8 +190,6 @@ app.on('ready', () => {
         return { action: 'allow' };
       });
     } catch (e) {
-      // Some older Electron versions may not support setWindowOpenHandler on all contents
-      // In that case, listen for the deprecated event as a fallback
       try {
         (contents as any).on && (contents as any).on('new-window', (evt: any, navigationUrl: string) => {
           if (adblock.popupBlocking && adblock.matches(navigationUrl)) {
@@ -256,6 +272,138 @@ ipcMain.handle('open-player-window', async (event, urlString: string) => {
   }
 });
 
+// BrowserView management: create/destroy/update a BrowserView attached to the caller's BrowserWindow
+const playerViews = new Map<number, BrowserView>();
+const playerViewMeta = new Map<number, { originalBounds?: Electron.Rectangle, prevFullScreen?: boolean, url?: string, enterHandler?: () => void, fullscreenWindowId?: number }>();
+
+ipcMain.handle('player-view-create', async (event, urlString: string, opts: { bounds?: { x: number, y: number, width: number, height: number } | null } = {}) => {
+  try {
+    const sender = event && event.sender;
+    const parentWin = BrowserWindow.fromWebContents(sender as any);
+    if (!parentWin) return { error: 'no-parent-window' };
+    const contentsId = (sender as any).id || parentWin.id;
+
+    // If an existing view is present for this contents, destroy it first
+    const existing = playerViews.get(contentsId);
+    if (existing) {
+      try { parentWin.removeBrowserView(existing); (existing.webContents as any).destroy(); } catch (e) {}
+      playerViews.delete(contentsId);
+    }
+
+    const view = new BrowserView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), sandbox: true, nodeIntegration: false } });
+    playerViews.set(contentsId, view);
+    // Store the requested URL in meta so fullscreen handler can open it in a new window
+    playerViewMeta.set(contentsId, { ...(playerViewMeta.get(contentsId) || {}), url: urlString });
+    // Register cleanup when the owning renderer/WebContents is destroyed or crashes
+    try {
+      const owner = sender as any;
+      const cleanup = () => {
+        try {
+          const existing = playerViews.get(contentsId);
+          if (existing) {
+            try {
+              const meta = playerViewMeta.get(contentsId);
+              if (meta && meta.enterHandler) try { existing.webContents.removeListener('enter-html-full-screen', meta.enterHandler as any); } catch (e) {}
+              const pwParent = BrowserWindow.fromWebContents(owner);
+              if (pwParent) try { pwParent.removeBrowserView(existing); } catch (e) {}
+              try { (existing.webContents as any).destroy(); } catch (e) {}
+            } catch (e) {}
+            playerViews.delete(contentsId);
+            playerViewMeta.delete(contentsId);
+          }
+        } catch (e) {}
+      };
+      // Listen for renderer crashes, navigations that destroy the frame, and component destroy
+      owner.once && owner.once('destroyed', cleanup);
+      owner.once && owner.once('render-process-gone', cleanup);
+    } catch (e) {
+      // ignore
+    }
+    // Attach fullscreen handlers so that when the embedded content requests
+    // HTML fullscreen we notify the renderer to open a separate window.
+    const enterHandler = () => {
+      try {
+        console.log('BrowserView enter-html-full-screen detected');
+        const meta = playerViewMeta.get(contentsId) || {};
+        const urlToOpen = meta.url || '';
+        console.log('Sending fullscreen request with URL:', urlToOpen);
+        // Send message to renderer to open separate window
+        try { parentWin.webContents.send('player-view-fullscreen-request', urlToOpen); } catch (e) {
+          console.error('Failed to send fullscreen request', e);
+        }
+      } catch (e) { 
+        console.error('enterHandler error', e);
+      }
+    };
+    view.webContents.on('enter-html-full-screen', enterHandler as any);
+    playerViewMeta.set(contentsId, { originalBounds: view.getBounds(), enterHandler });
+    parentWin.setBrowserView(view);
+
+    // Compute bounds: use provided bounds (window coordinates) or full client area
+    const winBounds = parentWin.getContentBounds();
+    let b = { x: 0, y: 0, width: winBounds.width, height: winBounds.height };
+    if (opts && opts.bounds) {
+      // Clamp and use provided
+      b = {
+        x: Math.max(0, Math.floor(opts.bounds.x)),
+        y: Math.max(0, Math.floor(opts.bounds.y)),
+        width: Math.max(0, Math.floor(opts.bounds.width)),
+        height: Math.max(0, Math.floor(opts.bounds.height)),
+      };
+    }
+    view.setBounds(b);
+    view.setAutoResize({ width: true, height: true });
+
+    // Load the URL
+    await view.webContents.loadURL(urlString);
+    return { success: true };
+  } catch (e) {
+    console.error('player-view-create failed', e);
+    return { error: String(e) };
+  }
+});
+
+ipcMain.handle('player-view-destroy', async (event) => {
+  try {
+    const sender = event && event.sender;
+    const parentWin = BrowserWindow.fromWebContents(sender as any);
+    if (!parentWin) return { error: 'no-parent-window' };
+    const contentsId = (sender as any).id || parentWin.id;
+    const existing = playerViews.get(contentsId);
+    if (existing) {
+      try {
+        // remove listeners if present
+        const meta = playerViewMeta.get(contentsId);
+        if (meta && meta.enterHandler) try { existing.webContents.removeListener('enter-html-full-screen', meta.enterHandler as any); } catch (e) {}
+        parentWin.removeBrowserView(existing);
+        (existing.webContents as any).destroy();
+      } catch (e) {}
+      playerViews.delete(contentsId);
+      playerViewMeta.delete(contentsId);
+    }
+    return { success: true };
+  } catch (e) {
+    console.error('player-view-destroy failed', e);
+    return { error: String(e) };
+  }
+});
+
+ipcMain.handle('player-view-set-bounds', async (event, bounds: { x: number, y: number, width: number, height: number }) => {
+  try {
+    const sender = event && event.sender;
+    const parentWin = BrowserWindow.fromWebContents(sender as any);
+    if (!parentWin) return { error: 'no-parent-window' };
+    const contentsId = (sender as any).id || parentWin.id;
+    const existing = playerViews.get(contentsId);
+    if (!existing) return { error: 'no-view' };
+    existing.setBounds({ x: Math.max(0, Math.floor(bounds.x)), y: Math.max(0, Math.floor(bounds.y)), width: Math.max(0, Math.floor(bounds.width)), height: Math.max(0, Math.floor(bounds.height)) });
+    return { success: true };
+  } catch (e) {
+    console.error('player-view-set-bounds failed', e);
+    return { error: String(e) };
+  }
+});
+
 // Adblock IPC: expose management to renderer via preload
 ipcMain.handle('adblock-add-rule', async (event, rule: string) => {
   try {
@@ -303,7 +451,10 @@ function allowRequestFor(contentsId: number, limit = 120) {
   }
   // Log progress occasionally to help debugging rate issues
   if (rec.count > 0 && rec.count % Math.max(1, Math.floor(rec.limit / 4)) === 0) {
-    console.log(`tmdb rate usage for contents ${contentsId}: ${rec.count}/${rec.limit}`);
+    // Only log TMDB rate usage when explicit debug flag set to avoid spamming renderer logs
+    if (process.env.JSTREAM_TMDB_DEBUG === '1') {
+      console.log(`tmdb rate usage for contents ${contentsId}: ${rec.count}/${rec.limit}`);
+    }
   }
   if (rec.count < rec.limit) {
     rec.count++;
@@ -311,7 +462,10 @@ function allowRequestFor(contentsId: number, limit = 120) {
     return true;
   }
   rateLimits.set(contentsId, rec);
-  console.warn(`tmdb rate limit exceeded for contents ${contentsId}: ${rec.count}/${rec.limit}, resets in ${Math.ceil((rec.resetAt - now)/1000)}s`);
+  // Only warn when debugging TMDB proxy
+  if (process.env.JSTREAM_TMDB_DEBUG === '1') {
+    console.warn(`tmdb rate limit exceeded for contents ${contentsId}: ${rec.count}/${rec.limit}, resets in ${Math.ceil((rec.resetAt - now)/1000)}s`);
+  }
   return false;
 }
 
@@ -367,7 +521,7 @@ ipcMain.handle('tmdb-request', async (event, endpoint: string, params: Record<st
 
     const lib = url.protocol === 'https:' ? https : http;
     if (endpoint.startsWith('collection/')) {
-      console.log('tmdb-request: collection detail requested', endpoint);
+      if (process.env.JSTREAM_TMDB_DEBUG === '1') console.log('tmdb-request: collection detail requested', endpoint);
     }
     const result = await new Promise<any>((resolve, reject) => {
       const req = lib.get(url.toString(), (res) => {
@@ -378,7 +532,7 @@ ipcMain.handle('tmdb-request', async (event, endpoint: string, params: Record<st
             const txt = Buffer.concat(bufs).toString('utf8');
             const json = JSON.parse(txt);
             if (endpoint.startsWith('collection/') && res.statusCode !== 200) {
-              console.warn('tmdb-request: collection detail returned non-200', res.statusCode, url.toString());
+              if (process.env.JSTREAM_TMDB_DEBUG === '1') console.warn('tmdb-request: collection detail returned non-200', res.statusCode, url.toString());
             }
             resolve(json);
           } catch (e) { reject(e); }
@@ -407,7 +561,7 @@ ipcMain.handle('tmdb-exports-getCollectionsFeed', async (event, opts: { tryDays?
     let apiKey = cfg && cfg.tmdbApiKey;
     if (!apiKey) {
       apiKey = '49787128da94b3585b21dac5c4a92fcc';
-      console.warn('TMDB API key not configured in remote config; using fallback key for feed requests');
+      if (process.env.JSTREAM_TMDB_DEBUG === '1') console.warn('TMDB API key not configured in remote config; using fallback key for feed requests');
     }
 
     // Find latest available export
@@ -431,7 +585,7 @@ ipcMain.handle('tmdb-exports-getCollectionsFeed', async (event, opts: { tryDays?
         if (res.statusCode === 200) {
           exportUrl = url;
           dateStr = ds;
-          console.log('Found export from example:', url);
+          if (process.env.JSTREAM_TMDB_DEBUG === '1') console.log('Found export from example:', url);
           break;
         }
       } catch (e) {
@@ -463,7 +617,7 @@ ipcMain.handle('tmdb-exports-getCollectionsFeed', async (event, opts: { tryDays?
     }
 
     if (!exportUrl || !dateStr) {
-      console.log('No recent collection export available, tried dates back to', tryDays, 'days. Returning empty ids so renderer can fallback.');
+      if (process.env.JSTREAM_TMDB_DEBUG === '1') console.log('No recent collection export available, tried dates back to', tryDays, 'days. Returning empty ids so renderer can fallback.');
       // Fallback: a set of collection IDs (start at 1 to include smaller ids); renderer will fetch details
       const fallbackIds = Array.from({ length: 200 }).map((_, i) => i + 1); // 1..200
       const start = (page - 1) * perPage;
@@ -471,11 +625,11 @@ ipcMain.handle('tmdb-exports-getCollectionsFeed', async (event, opts: { tryDays?
       const pageIds = fallbackIds.slice(start, end);
       const hasMore = end < fallbackIds.length;
       const pageItems = pageIds.map((id): { id: number; name?: string | undefined } => ({ id, name: undefined }));
-      console.log('tmdb-exports-getCollectionsFeed: fallback returning', pageItems.length, 'items for page', page);
+      if (process.env.JSTREAM_TMDB_DEBUG === '1') console.log('tmdb-exports-getCollectionsFeed: fallback returning', pageItems.length, 'items for page', page);
       return { items: pageItems, hasMore };
     }
 
-    console.log('Found export:', exportUrl);
+    if (process.env.JSTREAM_TMDB_DEBUG === '1') console.log('Found export:', exportUrl);
 
     // Stream-download -> gunzip -> parse NDJSON line-by-line to collect ids and names
     const items: {id: number, name?: string}[] = [];
@@ -511,10 +665,10 @@ ipcMain.handle('tmdb-exports-getCollectionsFeed', async (event, opts: { tryDays?
     const end = start + perPage;
     const pageItems = items.slice(start, end);
     const hasMore = end < items.length;
-    console.log('tmdb-exports-getCollectionsFeed: returning', pageItems.length, 'items for page', page, 'sample:', pageItems.slice(0, 6));
+    if (process.env.JSTREAM_TMDB_DEBUG === '1') console.log('tmdb-exports-getCollectionsFeed: returning', pageItems.length, 'items for page', page, 'sample:', pageItems.slice(0, 6));
     return { items: pageItems, hasMore };
   } catch (e) {
-    console.warn('Failed to fetch collections feed', e);
+    if (process.env.JSTREAM_TMDB_DEBUG === '1') console.warn('Failed to fetch collections feed', e);
     return { error: String(e), ids: [], hasMore: false };
   }
 });

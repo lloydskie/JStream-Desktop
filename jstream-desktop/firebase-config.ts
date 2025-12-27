@@ -34,7 +34,7 @@ export async function fetchStreamingUrl(contentId: string): Promise<string | nul
       return null;
     }
   } catch (error) {
-    console.error('Error fetching streaming URL:', error);
+    // Suppress Firebase errors to avoid console spam in the renderer.
     return null;
   }
 }
@@ -44,10 +44,9 @@ export async function testFirebaseConnection() {
   try {
     // Try to fetch a known document (replace 'testId' with a real one for your DB)
     const url = await fetchStreamingUrl('testId');
-    console.log('Test streaming URL:', url);
     return url;
   } catch (error) {
-    console.error('Firebase test failed:', error);
+    // Suppress test errors
     return null;
   }
 }

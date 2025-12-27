@@ -9,7 +9,7 @@ export async function fetchTMDB(endpoint: string, params: Record<string, string 
       return res;
     }
   } catch (e) {
-    console.warn('tmdb proxy failed, falling back to direct fetch:', e);
+    try { if ((window as any).__JSTREAM_DEBUG) console.warn('tmdb proxy failed, falling back to direct fetch:', e); } catch (err) {}
   }
 
   // Fallback: direct client-side call (used in tests or if preload unavailable)
@@ -19,7 +19,7 @@ export async function fetchTMDB(endpoint: string, params: Record<string, string 
   const url = new URL(`${TMDB_BASE_URL}/${endpoint}`);
   // If no API key is available, return an empty result set instead of attempting the network call
   if (!apiKey) {
-    console.warn('TMDB API key missing; returning empty results for', endpoint);
+    try { if ((window as any).__JSTREAM_DEBUG) console.warn('TMDB API key missing; returning empty results for', endpoint); } catch (err) {}
     return { results: [] };
   }
   url.searchParams.append("api_key", apiKey);
@@ -28,7 +28,14 @@ export async function fetchTMDB(endpoint: string, params: Record<string, string 
   });
   const response = await fetch(url.toString());
   if (!response.ok) {
-    throw new Error(`TMDB API error: ${response.statusText}`);
+    // Treat 404 (not found) as a non-exceptional case and return null so callers can handle missing items quietly.
+    if (response.status === 404) return null;
+    throw new Error(`TMDB API error: ${response.status} ${response.statusText}`);
   }
-  return response.json();
+  try {
+    return await response.json();
+  } catch (e) {
+    try { if ((window as any).__JSTREAM_DEBUG) console.warn('tmdbClient: failed to parse JSON response', e); } catch (err) {}
+    return null;
+  }
 }
