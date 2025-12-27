@@ -3,11 +3,15 @@ import { Box, Text, Button, Spinner, HStack } from "@chakra-ui/react";
 import VideoPlayer from "./VideoPlayer";
 import { fetchTMDB } from "../utils/tmdbClient";
 
-export default function VideoPlayerPage({ playerType = 'movie', params = null, onBack }: { playerType?: 'movie'|'tv', params?: Record<string, any> | null, onBack?: () => void }) {
+export default function VideoPlayerPage({ playerType = 'movie', params = null, onBack, player }: { playerType?: 'movie'|'tv', params?: Record<string, any> | null, onBack?: () => void, player?: string }) {
+  try { console.info('VideoPlayerPage: props ->', { playerType, player, params }); } catch(e) {}
   const [item, setItem] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [savedPosition, setSavedPosition] = useState<number | null>(null);
 
+
+  // Serialize params so updates to nested fields (season/episode/etc.) trigger this effect
+  const paramsKey = React.useMemo(() => JSON.stringify(params || {}), [params]);
 
   useEffect(() => {
     (async () => {
@@ -37,7 +41,7 @@ export default function VideoPlayerPage({ playerType = 'movie', params = null, o
         setLoading(false);
       }
     })();
-  }, [playerType, params]);
+  }, [playerType, paramsKey]);
 
   if (!params || !params.tmdbId) return <Box p={4}><Text>Select a movie or TV show to begin playback.</Text></Box>;
   if (loading) return <Box p={4}><Spinner /></Box>;
@@ -50,7 +54,7 @@ export default function VideoPlayerPage({ playerType = 'movie', params = null, o
         <div className="player-title">{item.name || item.title}</div>
       </div>
       <div className="player-content">
-        <VideoPlayer type={playerType} params={params || { tmdbId: params.tmdbId }} />
+        <VideoPlayer player={player} type={playerType} params={params || { tmdbId: params.tmdbId }} />
       </div>
     </div>
   );

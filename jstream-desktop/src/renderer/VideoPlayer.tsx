@@ -8,6 +8,9 @@ interface VideoPlayerProps {
 }
 
 export default function VideoPlayer({ type, params, player }: VideoPlayerProps) {
+  // Serialize params so in-place mutations (common in parent state updates)
+  // will still trigger effects that depend on the contents.
+  const paramsKey = React.useMemo(() => JSON.stringify(params || {}), [params]);
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [useWebview, setUseWebview] = useState(type === 'tv');
@@ -27,7 +30,12 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
     const tmdbId = params && (params.tmdbId || params.tmdb_id || params.id || params.itemId);
     const season = params && (params.season || params.season_number);
     const episode = params && (params.episode || params.episode_number);
-    const pn = String(playerName || 'Aether');
+    const pn = String(playerName || (params && params.player) || 'Aether');
+    if ((params && params.player) && playerName && String(params.player) !== String(playerName)) {
+      try { console.info('VideoPlayer: playerName prop differs from params.player; using prop ->', playerName, 'params.player ->', params.player); } catch(e) {}
+    }
+    let id = tmdbId;
+    // Note: Cygnus and Draco use TMDB IDs as per their documentation
     switch (pn) {
       case 'Boreal': {
         if (type === 'movie') {
@@ -52,39 +60,39 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
       }
       case 'Cygnus': {
         if (type === 'movie') {
-          let u = `https://vidsrc-embed.ru/embed/movie/${tmdbId}`;
+          let u = `https://vidsrc-embed.su/embed/movie/${tmdbId}`;
           if (wantAutoplay) u += `?autoplay=1`;
-          if (wantAutoplayNext) u += `${wantAutoplay ? '&' : '?'}autoplayNext=1`;
+          if (wantAutoplayNext) u += `${wantAutoplay ? '&' : '?'}autonext=1`;
           return u;
         }
         if (season != null && episode != null) {
-          let u = `https://vidsrc-embed.ru/embed/tv/${tmdbId}/${season}/${episode}`;
+          let u = `https://vidsrc-embed.su/embed/tv/${tmdbId}/${season}-${episode}`;
           if (wantAutoplay) u += `?autoplay=1`;
-          if (wantAutoplayNext) u += `${wantAutoplay ? '&' : '?'}autoplayNext=1`;
+          if (wantAutoplayNext) u += `${wantAutoplay ? '&' : '?'}autonext=1`;
           return u;
         }
         {
-          let u = `https://vidsrc-embed.ru/embed/tv/${tmdbId}`;
+          let u = `https://vidsrc-embed.su/embed/tv/${tmdbId}`;
           if (wantAutoplay) u += `?autoplay=1`;
-          if (wantAutoplayNext) u += `${wantAutoplay ? '&' : '?'}autoplayNext=1`;
+          if (wantAutoplayNext) u += `${wantAutoplay ? '&' : '?'}autonext=1`;
           return u;
         }
       }
       case 'Draco': {
         if (type === 'movie') {
-          let u = `https://vidlink.pro/movie/${tmdbId}`;
+          let u = `https://vidlink.pro/movie/${id}`;
           if (wantAutoplay) u += `?autoplay=1`;
           if (wantAutoplayNext) u += `${wantAutoplay ? '&' : '?'}autoplayNext=1`;
           return u;
         }
         if (season != null && episode != null) {
-          let u = `https://vidlink.pro/tv/${tmdbId}/${season}/${episode}`;
+          let u = `https://vidlink.pro/tv/${id}/${season}/${episode}`;
           if (wantAutoplay) u += `?autoplay=1`;
           if (wantAutoplayNext) u += `${wantAutoplay ? '&' : '?'}autoplayNext=1`;
           return u;
         }
         {
-          let u = `https://vidlink.pro/tv/${tmdbId}`;
+          let u = `https://vidlink.pro/tv/${id}`;
           if (wantAutoplay) u += `?autoplay=1`;
           if (wantAutoplayNext) u += `${wantAutoplay ? '&' : '?'}autoplayNext=1`;
           return u;
@@ -103,9 +111,28 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
       if (!mounted) return;
       try {
         const built = buildProviderUrl(config, type, params || {}, player);
-        try { if ((window as any).__JSTREAM_DEBUG) console.info('VideoPlayer: params ->', params); } catch(e){}
-        try { if ((window as any).__JSTREAM_DEBUG) console.info('VideoPlayer: built URL ->', built); } catch(e){}
+        try { console.info('VideoPlayer: player ->', player, 'paramsKey ->', paramsKey); } catch(e){}
+        try { console.info('VideoPlayer: built URL ->', built); } catch(e){}
         setUrl(built);
+        // For Cygnus and Draco on TV, open in separate BrowserView window instead of webview
+        if (type === 'tv' && (player === 'Cygnus' || player === 'Draco')) {
+          console.info('VideoPlayer: opening player window for', player, 'with URL', built);
+          setEmbedBlocked(true);
+          setHeadersChecked(true);
+          try {
+            const playerWindow = (window as any).playerWindow;
+            if (playerWindow && typeof playerWindow.create === 'function') {
+              playerWindow.create(built);
+            } else {
+              console.warn('VideoPlayer: playerWindow not available, falling back to external browser');
+              (window as any).network.openExternal(built);
+            }
+          } catch (e) {
+            console.warn('VideoPlayer: failed to open player window for', player, e, 'falling back to external browser');
+            try { (window as any).network.openExternal(built); } catch (ex) { console.error('VideoPlayer: fallback also failed', ex); }
+          }
+          return;
+        }
       } catch (e) {
         console.error('VideoPlayer: failed to build url', e);
         setError('Failed to construct player URL');
@@ -115,7 +142,7 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
       setError('Failed to load player configuration');
     });
     return () => { mounted = false; };
-  }, [type, params, player]);
+  }, [type, player, paramsKey]);
 
   // If a saved position is found later, rebuild the player URL to include `progress` so playback starts there
   useEffect(() => {
@@ -291,6 +318,28 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
             }
             document.documentElement && (document.documentElement.style.height='100%');
             document.body && (document.body.style.height='100%');
+            // Intercept fullscreen requests from player controls and notify host
+            try{
+              (function(){
+                function notifyHost(u){ try{ window.postMessage({ type: 'jstream:fullscreen-request', url: u || location.href }, '*'); }catch(e){} }
+                try{
+                  ['requestFullscreen','webkitRequestFullscreen','mozRequestFullScreen','msRequestFullscreen'].forEach(function(name){
+                    try{
+                      const proto = (Element.prototype as any);
+                      if(proto && proto[name]){
+                        proto['__' + name] = proto[name];
+                        proto[name] = function(){ try{ notifyHost(location.href); }catch(e){}; try{ return Promise.resolve(); }catch(e){} };
+                      }
+                    }catch(e){}
+                  });
+                }catch(e){}
+                try{ if ((typeof HTMLVideoElement !== 'undefined') && HTMLVideoElement.prototype && HTMLVideoElement.prototype.requestFullscreen) {
+                    HTMLVideoElement.prototype['__requestFullscreen'] = HTMLVideoElement.prototype.requestFullscreen;
+                    HTMLVideoElement.prototype.requestFullscreen = function(){ try{ notifyHost(location.href); }catch(e){}; return Promise.resolve(); };
+                  }
+                }catch(e){}
+              })();
+            }catch(e){}
             Array.from(document.querySelectorAll('iframe')).forEach(i=>{ styleIframe(i); ensureAncestors(i); });
             const mo = new MutationObserver((mutations)=>{
               for(const m of mutations){
@@ -406,6 +455,23 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
     return () => clearInterval(iv);
   }, [webviewRef.current, url]);
 
+  // Ensure webview reloads when the URL / selection changes (some webview hosts
+  // may not pick up src changes reliably). This forces the webview to load the
+  // new URL when player/params change.
+  useEffect(() => {
+    if (!useWebview) return;
+    const w = webviewRef.current;
+    if (!w) return;
+    try {
+      try { if (w.getAttribute && String(w.getAttribute('src')) !== String(url)) { w.setAttribute && w.setAttribute('src', url); } } catch(e) {}
+      if (typeof (w as any).reload === 'function') {
+        try { (w as any).reload(); } catch(e) {}
+      } else if (typeof (w as any).loadURL === 'function') {
+        try { (w as any).loadURL(url); } catch(e) {}
+      }
+    } catch (e) {}
+  }, [url, useWebview, paramsKey, player]);
+
   // Reset states when switching to a different video
   useEffect(() => {
     setEmbedBlocked(false);
@@ -414,7 +480,7 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
     // Preserve the preference to use the in-DOM webview for TV content
     setUseWebview(type === 'tv');
     setViewFullscreen(false);
-  }, [type, params, player]);
+  }, [type, player, paramsKey]);
 
   // Load saved progress if any and prepare for initial seek
   useEffect(() => {
@@ -429,13 +495,18 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
       }
     }
     loadSaved();
-  }, [params]);
+  }, [paramsKey]);
 
   useEffect(() => {
     function onMessage(ev: MessageEvent) {
       try {
         const msg = ev.data;
         if (!msg) return;
+        // Guests can request opening the native player window by posting a message
+        if (msg.type === 'videasy:fullscreen' || msg.type === 'fullscreen' || msg.type === 'jstream:fullscreen-request' || msg.type === 'videasy:fullscreen-request') {
+          try { openInPlayerWindow(msg.url || url); } catch (e) {}
+          return;
+        }
         // message type from the embedded player; standardize on 'videasy:progress'
         if (msg.type === 'videasy:progress' || msg.type === 'progress') {
           const position = Number(msg.position || 0);
@@ -455,7 +526,7 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
     }
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [params]);
+  }, [paramsKey]);
 
   // Listen for BrowserView fullscreen events and toggle a body class so UI can adapt
   useEffect(() => {
@@ -533,6 +604,26 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
     }
   }
 
+  // Open the player in a separate native window (preferred) or fallback to external
+  function openInPlayerWindow(u?: string) {
+    try {
+      const urlToOpen = u || url;
+      const pw = (window as any).playerWindow;
+      const pv = (window as any).playerView;
+      if (pw && typeof pw.open === 'function') {
+        pw.open(urlToOpen);
+        // destroy any existing BrowserView to avoid duplicate playback
+        try { pv && typeof pv.destroy === 'function' && pv.destroy(); } catch (e) {}
+        setEmbedBlocked(true);
+        return;
+      }
+      // fallback to openExternal if playerWindow not available
+      openExternalUrl(urlToOpen);
+    } catch (e) {
+      openExternalUrl(u);
+    }
+  }
+
   // (iframe error handler removed; BrowserView path used instead)
 
   if (!url && !error) return <div>Loading player...</div>;
@@ -562,7 +653,10 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
           // Use Electron webview as an in-tab fallback for sites that disallow being framed
           <>
             <div className="webview-badge">Using in-app fallback (webview)</div>
+            {/* Inline open buttons removed for TV player; embedded player controls will
+                trigger native player window via the injected fullscreen-request message. */}
             <webview
+              key={url}
               ref={webviewRef}
               src={url}
               className="video-embed"
@@ -614,6 +708,7 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
               >
                 Open Player
               </button>
+              <button className="button" onClick={() => openInPlayerWindow()}>Open in Window</button>
               <button className="button ghost" onClick={() => { setUseWebview(true); setEmbedBlocked(false); }}>Use in-app fallback</button>
             </div>
           </div>

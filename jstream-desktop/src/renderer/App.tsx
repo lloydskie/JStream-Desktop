@@ -122,6 +122,27 @@ export default function App() {
   const [playerSelectedSeason, setPlayerSelectedSeason] = useState<number | null>(null);
   const [playerSelectedEpisode, setPlayerSelectedEpisode] = useState<number | null>(null);
   // Fetch seasons when TV player opens
+  // Serialize playerModalParams to ensure in-place updates still trigger effects
+  const playerModalParamsKey = React.useMemo(() => JSON.stringify(playerModalParams || {}), [playerModalParams]);
+
+  // Debug: log when player modal opens and the selected player/params
+  React.useEffect(() => {
+    try {
+      if (!playerModalOpen) return;
+      console.info('App: player modal opened; selectedPlayer ->', selectedPlayer, 'playerModalParams ->', playerModalParams);
+    } catch (e) {}
+  }, [playerModalOpen, selectedPlayer, playerModalParamsKey]);
+
+  // Propagate selectedPlayer into playerModalParams while the modal is open so
+  // TV player receives immediate updates when the user switches providers.
+  React.useEffect(() => {
+    try {
+      if (!playerModalOpen) return;
+      console.info('App: propagating selectedPlayer to playerModalParams ->', selectedPlayer);
+      setPlayerModalParams((p: any) => ({ ...(p || {}), player: selectedPlayer }));
+    } catch (e) {}
+  }, [selectedPlayer, playerModalOpen]);
+
   React.useEffect(() => {
     let mounted = true;
     (async () => {
@@ -147,7 +168,7 @@ export default function App() {
       }
     })();
     return () => { mounted = false; };
-  }, [playerModalOpen, playerModalType, playerModalParams]);
+  }, [playerModalOpen, playerModalType]);
 
   // Fetch episodes for selected season
   React.useEffect(() => {
@@ -178,9 +199,8 @@ export default function App() {
       }
     })();
     return () => { mounted = false; };
-  }, [playerModalOpen, playerModalType, playerSelectedSeason, playerModalParams]);
-  
-  // Season scroller pager state: update pager bars based on scroll
+  }, [playerModalOpen, playerModalType, playerSelectedSeason]);
+
   React.useEffect(() => {
     const scroller = document.getElementById('season-scroller');
     const pager = document.getElementById('season-pager');
@@ -305,7 +325,9 @@ export default function App() {
     setPlayerParams(combined);
     // Open the player in a fullscreen modal (user requested modal iframe)
     setPlayerModalType(type);
-    setPlayerModalParams(combined);
+    // include the currently selected player provider so the modal's VideoPlayer
+    // receives the desired provider immediately
+    setPlayerModalParams({ ...(combined || {}), player: selectedPlayer });
     // initialize player season/episode state from params if present
     try {
       if (type === 'tv') {
@@ -510,7 +532,7 @@ export default function App() {
                 <TabPanel sx={{padding: 0}}><ProfilePage /></TabPanel>
                 <TabPanel sx={{padding: 0}}><CollectionsPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedCollectionId={selectedCollectionId} /></TabPanel>
                 {/* Details page converted to modal — removed page panel */}
-                <TabPanel><VideoPlayerPage playerType={playerType} params={playerParams} onBack={handleBackFromPlayer} /></TabPanel>
+                <TabPanel><VideoPlayerPage playerType={playerType} params={playerParams} onBack={handleBackFromPlayer} player={selectedPlayer} /></TabPanel>
                 <TabPanel><PersonPage personId={selectedPersonId} onSelectWork={handleSelectMovie} /></TabPanel>
               </TabPanels>
             </div>
@@ -535,7 +557,7 @@ export default function App() {
                   {(['Aether','Boreal','Cygnus','Draco'] as const).map((name) => (
                     <button
                       key={name}
-                      onClick={() => setSelectedPlayer(name)}
+                      onClick={() => { try { console.info('App: player selector clicked ->', name); } catch(e){}; setSelectedPlayer(name); }}
                       className={`button ${selectedPlayer === name ? '' : 'ghost'}`}
                       style={{
                         padding: '6px 10px',
@@ -559,7 +581,11 @@ export default function App() {
                       onChange={(e) => {
                         const val = e.target.value ? Number(e.target.value) : null;
                         setPlayerSelectedSeason(val);
-                        try { setPlayerModalParams((p: any) => ({ ...(p || {}), season: val })); } catch (err) {}
+                        try {
+                          const newParams = { ...(playerModalParams || {}), season: val };
+                          setPlayerModalParams(newParams);
+                          console.info('App: setPlayerModalParams (season) ->', newParams);
+                        } catch (err) {}
                       }}
                       style={{ padding: '6px 8px', borderRadius: 6, background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.06)' }}
                     >
@@ -576,7 +602,11 @@ export default function App() {
                       onChange={(e) => {
                         const val = e.target.value ? Number(e.target.value) : null;
                         setPlayerSelectedEpisode(val);
-                        try { setPlayerModalParams((p: any) => ({ ...(p || {}), episode: val })); } catch (err) {}
+                        try {
+                          const newParams = { ...(playerModalParams || {}), episode: val };
+                          setPlayerModalParams(newParams);
+                          console.info('App: setPlayerModalParams (episode) ->', newParams);
+                        } catch (err) {}
                       }}
                       style={{ padding: '6px 8px', borderRadius: 6, background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.06)' }}
                     >
