@@ -45,6 +45,9 @@ test('VideoPlayer seeks on load when watch history exists', async () => {
     database: {
       watchHistorySet: vi.fn(async () => true),
       watchHistoryGet: vi.fn(async () => 45),
+    },
+    playerView: {
+      create: vi.fn(async () => ({ error: 'mocked error' })), // Force fallback to iframe
     }
   })
   render(

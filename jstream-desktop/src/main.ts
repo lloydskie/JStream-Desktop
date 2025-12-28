@@ -186,6 +186,23 @@ app.on('ready', () => {
   } catch (e) {
     console.warn('Adblock: failed to register webRequest handler', e);
   }
+
+  // Add referrer header for YouTube embed requests to fix error 153
+  try {
+    session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['*://www.youtube.com/embed/*'] }, (details, callback) => {
+      try {
+        const headers = { ...details.requestHeaders };
+        // Set referrer to match the origin parameter
+        headers['Referer'] = 'https://jstream.app/';
+        return callback({ requestHeaders: headers });
+      } catch (e) {
+        console.error('YouTube referrer header error', e);
+        return callback({});
+      }
+    });
+  } catch (e) {
+    console.warn('Failed to register YouTube referrer handler', e);
+  }
   // Global popup/window-open handler: deny new windows when popupBlocking is enabled.
   app.on('web-contents-created', (event, contents) => {
     try {

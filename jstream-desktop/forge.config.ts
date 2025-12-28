@@ -4,14 +4,20 @@ import { MakerZIP } from '@electron-forge/maker-zip';
 import { MakerDeb } from '@electron-forge/maker-deb';
 import { MakerRpm } from '@electron-forge/maker-rpm';
 import { VitePlugin } from '@electron-forge/plugin-vite';
+import path from 'node:path';
 // import { FusesPlugin } from '@electron-forge/plugin-fuses';
 // import { FuseV1Options, FuseVersion } from '@electron/fuses';
 
 const config: ForgeConfig = {
   packagerConfig: {
-    asar: true,
+    asar: false,
+    prune: false,
+    ignore: false,
+    files: ['**/*', 'node_modules/better-sqlite3/**'],
   },
-  rebuildConfig: {},
+  rebuildConfig: {
+    buildFromSource: ['better-sqlite3'],
+  },
   makers: [
     new MakerSquirrel({}),
     new MakerZIP({}, ['darwin']),
@@ -26,19 +32,20 @@ const config: ForgeConfig = {
         {
           // `entry` is just an alias for `build.lib.entry` in the corresponding file of `config`.
           entry: 'src/main.ts',
-          config: 'vite.main.config.ts',
+          // Resolve the vite config path explicitly to avoid duplicate-relative path issues
+          config: path.resolve(__dirname, 'vite.main.config.ts'),
           target: 'main',
         },
         {
           entry: 'src/preload.ts',
-          config: 'vite.preload.config.ts',
+          config: path.resolve(__dirname, 'vite.preload.config.ts'),
           target: 'preload',
         },
       ],
       renderer: [
         {
           name: 'main_window',
-          config: 'vite.renderer.config.ts',
+          config: path.resolve(__dirname, 'vite.renderer.config.ts'),
         },
       ],
     }),

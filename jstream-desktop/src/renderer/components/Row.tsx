@@ -594,7 +594,7 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode, onE
                       {hoverTrailerKey ? (
                         <iframe
                           className="preview-iframe"
-                          src={`https://www.youtube.com/embed/${hoverTrailerKey}?rel=0&autoplay=1&mute=0&controls=0&playsinline=1&modestbranding=1&enablejsapi=1`}
+                          src={`https://www.youtube.com/embed/${hoverTrailerKey}?rel=0&autoplay=1&mute=0&controls=0&playsinline=1&modestbranding=1&enablejsapi=1&origin=https://jstream.app`}
                           title="Preview"
                           frameBorder="0"
                           allow="autoplay; encrypted-media"

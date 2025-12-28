@@ -412,18 +412,27 @@ export default function DetailsModal({ tmdbId, itemTypeHint, onPlay, onSelect, o
     } catch (e) { /* ignore */ }
     try { window.dispatchEvent(new Event('app:pause-hero-trailer')); } catch (e) { /* ignore */ }
 
+    // Also set DOM dataset flag so detached/resilient code can detect modal state
+    try { document.documentElement.dataset.heroModalOpen = '1'; } catch (e) { /* ignore */ }
+
     try {
       heroHardPauseTimer.current = window.setInterval(() => {
         try {
-          const el = document.querySelector('.hero-trailer iframe') as HTMLIFrameElement | null;
-          if (!el || !el.contentWindow) return;
-          const src = String(el.src || '');
-          if (src.includes('player.vimeo')) {
-            el.contentWindow.postMessage(JSON.stringify({ method: 'pause' }), '*');
-          } else {
-            // YouTube pause/stop
-            el.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
-            el.contentWindow.postMessage('{"event":"command","func":"stopVideo","args":""}', '*');
+          // Pause all hero iframes on the page to avoid missed clones
+          const els = Array.from(document.querySelectorAll('.hero-trailer iframe')) as HTMLIFrameElement[];
+          if (!els || els.length === 0) return;
+          for (const el of els) {
+            try {
+              if (!el || !el.contentWindow) continue;
+              const src = String(el.src || '');
+              if (src.includes('player.vimeo')) {
+                el.contentWindow.postMessage(JSON.stringify({ method: 'pause' }), '*');
+              } else {
+                // YouTube pause/stop
+                el.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+                el.contentWindow.postMessage('{"event":"command","func":"stopVideo","args":""}', '*');
+              }
+            } catch (e) { /* ignore per-iframe */ }
           }
         } catch (e) { /* ignore */ }
       }, 400) as unknown as number;
@@ -431,6 +440,7 @@ export default function DetailsModal({ tmdbId, itemTypeHint, onPlay, onSelect, o
 
     return () => {
       try { (window as any).__heroModalOpen = false; } catch (e) { /* ignore */ }
+      try { delete document.documentElement.dataset.heroModalOpen; } catch (e) { /* ignore */ }
       try {
         const suppress = Boolean((window as any).__suppressHeroResume);
         if (!suppress) {

@@ -180,34 +180,38 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
       pausedByVisibility.value = true;
       setIsPlaying(false);
       try {
-        const el = document.querySelector('.hero-trailer iframe') as HTMLIFrameElement | null;
-        if (el && el.contentWindow) {
-          // YouTube postMessage API
-          if (String(trailerKey).startsWith('vimeo:')) {
-            // Vimeo player expects {method: 'pause'} messages
-            el.contentWindow.postMessage(JSON.stringify({ method: 'pause' }), '*');
-          } else {
-            el.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
-          }
+        const els = Array.from(document.querySelectorAll('.hero-trailer iframe')) as HTMLIFrameElement[];
+        for (const el of els) {
+          try {
+            if (!el || !el.contentWindow) continue;
+            if (String(trailerKey).startsWith('vimeo:')) {
+              el.contentWindow.postMessage(JSON.stringify({ method: 'pause' }), '*');
+            } else {
+              el.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+            }
+          } catch (e) { /* ignore per-iframe */ }
         }
       } catch (e) { /* ignore */ }
     };
 
     const handleResume = () => {
       // Do not resume visibility-driven playback while a details modal is open
-      if ((window as any).__heroModalOpen) return;
+      if (isHeroModalOpen()) return;
       if (!pausedByVisibility.value) return;
       pausedByVisibility.value = false;
       // Only resume if not paused externally by previews or other controllers
       if (mounted && !pausedExternally) {
         try {
-          const el = document.querySelector('.hero-trailer iframe') as HTMLIFrameElement | null;
-          if (el && el.contentWindow) {
-            if (String(trailerKey).startsWith('vimeo:')) {
-              el.contentWindow.postMessage(JSON.stringify({ method: 'play' }), '*');
-            } else {
-              el.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
-            }
+          const els = Array.from(document.querySelectorAll('.hero-trailer iframe')) as HTMLIFrameElement[];
+          for (const el of els) {
+            try {
+              if (!el || !el.contentWindow) continue;
+              if (String(trailerKey).startsWith('vimeo:')) {
+                el.contentWindow.postMessage(JSON.stringify({ method: 'play' }), '*');
+              } else {
+                el.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+              }
+            } catch (e) { /* ignore per-iframe */ }
           }
         } catch (e) { /* ignore */ }
         setIsPlaying(true);
@@ -244,7 +248,7 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
     }
     function resume() {
       // if a details modal is open, do not resume background hero trailers
-      if ((window as any).__heroModalOpen) return;
+      if (isHeroModalOpen()) return;
       // clear the external pause flag and attempt to play the iframe —
       // schedule a tiny timeout so the pausedExternally state update has taken effect
       setPausedExternally(false);
@@ -265,7 +269,7 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
     // Also listen for global custom events so components that dispatch events
     // can control the hero even if they cannot access the controller directly.
     const onPauseEvt = () => pause();
-    const onResumeEvt = () => { if ((window as any).__heroModalOpen) return; resume(); };
+    const onResumeEvt = () => { if (isHeroModalOpen()) return; resume(); };
     window.addEventListener('app:pause-hero-trailer', onPauseEvt as EventListener);
     window.addEventListener('app:resume-hero-trailer', onResumeEvt as EventListener);
 
@@ -377,6 +381,12 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
 
   const [resolvedCert, setResolvedCert] = useState<string | null>(certification || null);
 
+  const isHeroModalOpen = () => {
+    try {
+      return Boolean((window as any).__heroModalOpen) || Boolean(document && document.documentElement && document.documentElement.dataset && document.documentElement.dataset.heroModalOpen);
+    } catch (e) { return false; }
+  };
+
   // If we couldn't resolve certification from the passed `movie` object, try fetching TMDb endpoints
   useEffect(() => {
     let mounted = true;
@@ -438,7 +448,7 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
             })()
           ) : (
             <iframe
-              src={`https://www.youtube.com/embed/${encodeURIComponent(String(trailerKey))}?rel=0&autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&playsinline=1&modestbranding=1&loop=1&playlist=${encodeURIComponent(String(trailerKey))}&enablejsapi=1`}
+              src={`https://www.youtube.com/embed/${encodeURIComponent(String(trailerKey))}?rel=0&autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&playsinline=1&modestbranding=1&loop=1&playlist=${encodeURIComponent(String(trailerKey))}&enablejsapi=1&origin=https://jstream.app`}
               title="Trailer"
               frameBorder="0"
               allow="autoplay; encrypted-media"

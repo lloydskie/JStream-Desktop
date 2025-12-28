@@ -170,13 +170,16 @@ export default function DetailsHero({ movie, onPlay, onMore, fullBleed, isModalO
       pausedByVisibility.value = true;
       setIsPlaying(false);
       try {
-        const el = document.querySelector('.hero-trailer iframe') as HTMLIFrameElement | null;
-        if (el && el.contentWindow) {
-          if (String(trailerKey).startsWith('vimeo:')) {
-            el.contentWindow.postMessage(JSON.stringify({ method: 'pause' }), '*');
-          } else {
-            el.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
-          }
+        const els = Array.from(document.querySelectorAll('.hero-trailer iframe')) as HTMLIFrameElement[];
+        for (const el of els) {
+          try {
+            if (!el || !el.contentWindow) continue;
+            if (String(trailerKey).startsWith('vimeo:')) {
+              el.contentWindow.postMessage(JSON.stringify({ method: 'pause' }), '*');
+            } else {
+              el.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+            }
+          } catch (e) { /* ignore per-iframe */ }
         }
       } catch (e) { /* ignore */ }
     };
@@ -186,13 +189,16 @@ export default function DetailsHero({ movie, onPlay, onMore, fullBleed, isModalO
       pausedByVisibility.value = false;
       if (mounted && !pausedExternally) {
         try {
-          const el = document.querySelector('.hero-trailer iframe') as HTMLIFrameElement | null;
-          if (el && el.contentWindow) {
-            if (String(trailerKey).startsWith('vimeo:')) {
-              el.contentWindow.postMessage(JSON.stringify({ method: 'play' }), '*');
-            } else {
-              el.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
-            }
+          const els = Array.from(document.querySelectorAll('.hero-trailer iframe')) as HTMLIFrameElement[];
+          for (const el of els) {
+            try {
+              if (!el || !el.contentWindow) continue;
+              if (String(trailerKey).startsWith('vimeo:')) {
+                el.contentWindow.postMessage(JSON.stringify({ method: 'play' }), '*');
+              } else {
+                el.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+              }
+            } catch (e) { /* ignore per-iframe */ }
           }
         } catch (e) { /* ignore */ }
         setIsPlaying(true);
@@ -221,18 +227,18 @@ export default function DetailsHero({ movie, onPlay, onMore, fullBleed, isModalO
       setPausedExternally(true);
       setIsPlaying(false);
       try {
-        const el = document.querySelector('.hero-trailer iframe') as HTMLIFrameElement | null;
-        if (el && el.contentWindow) {
-          el.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+        const els = Array.from(document.querySelectorAll('.hero-trailer iframe')) as HTMLIFrameElement[];
+        for (const el of els) {
+          try { if (el && el.contentWindow) el.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*'); } catch (e) { /* ignore per-iframe */ }
         }
       } catch (e) { /* ignore */ }
     }
     function resume() {
       setPausedExternally(false);
       try {
-        const el = document.querySelector('.hero-trailer iframe') as HTMLIFrameElement | null;
-        if (el && el.contentWindow) {
-          el.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+        const els = Array.from(document.querySelectorAll('.hero-trailer iframe')) as HTMLIFrameElement[];
+        for (const el of els) {
+          try { if (el && el.contentWindow) el.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*'); } catch (e) { /* ignore per-iframe */ }
         }
       } catch (e) { /* ignore */ }
       setTimeout(() => {
@@ -403,7 +409,7 @@ export default function DetailsHero({ movie, onPlay, onMore, fullBleed, isModalO
               console.debug('DetailsHero: embedding youtube', trailerKey, 'muted=', isMuted);
               return (
                 <iframe
-                  src={`https://www.youtube.com/embed/${encodeURIComponent(String(trailerKey))}?rel=0&autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&playsinline=1&modestbranding=1&loop=1&playlist=${encodeURIComponent(String(trailerKey))}&enablejsapi=1`}
+                  src={`https://www.youtube.com/embed/${encodeURIComponent(String(trailerKey))}?rel=0&autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&playsinline=1&modestbranding=1&loop=1&playlist=${encodeURIComponent(String(trailerKey))}&enablejsapi=1&origin=https://jstream.app`}
                   title="Trailer"
                   frameBorder="0"
                   allow="autoplay; encrypted-media"
