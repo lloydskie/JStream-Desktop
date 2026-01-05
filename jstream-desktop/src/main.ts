@@ -107,6 +107,33 @@ ipcMain.handle('watch-history-list', async (event) => {
   return stmt.all();
 });
 
+// Window control handlers for frameless window
+ipcMain.handle('window-minimize', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) win.minimize();
+});
+
+ipcMain.handle('window-maximize', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) {
+    if (win.isMaximized()) {
+      win.unmaximize();
+    } else {
+      win.maximize();
+    }
+  }
+});
+
+ipcMain.handle('window-close', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) win.close();
+});
+
+ipcMain.handle('window-is-maximized', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  return win ? win.isMaximized() : false;
+});
+
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
@@ -119,6 +146,7 @@ const createWindow = () => {
     height: 600,
     minWidth: 768,
     minHeight: 600,
+    frame: false, // Remove default title bar
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       webviewTag: true,
@@ -161,8 +189,24 @@ const createWindow = () => {
     );
   }
 
-  // Open the DevTools.
-  mainWindow.webContents.openDevTools();
+  // Disable DevTools completely - prevent opening via shortcuts or programmatically
+  mainWindow.webContents.on('devtools-opened', () => {
+    mainWindow.webContents.closeDevTools();
+  });
+
+  // Prevent DevTools keyboard shortcuts
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    // Block common DevTools shortcuts
+    if (
+      (input.key === 'F12') ||
+      (input.control && input.shift && input.key.toLowerCase() === 'i') ||
+      (input.control && input.shift && input.key.toLowerCase() === 'j') ||
+      (input.control && input.shift && input.key.toLowerCase() === 'c') ||
+      (input.control && input.key.toLowerCase() === 'u')
+    ) {
+      event.preventDefault();
+    }
+  });
 };
 
 // This method will be called when Electron has finished
@@ -291,6 +335,23 @@ ipcMain.handle('open-player-window', async (event, urlString: string) => {
         preload: path.join(__dirname, 'preload.js'),
       },
     });
+
+    // Disable DevTools for player windows
+    win.webContents.on('devtools-opened', () => {
+      win.webContents.closeDevTools();
+    });
+    win.webContents.on('before-input-event', (event, input) => {
+      if (
+        (input.key === 'F12') ||
+        (input.control && input.shift && input.key.toLowerCase() === 'i') ||
+        (input.control && input.shift && input.key.toLowerCase() === 'j') ||
+        (input.control && input.shift && input.key.toLowerCase() === 'c') ||
+        (input.control && input.key.toLowerCase() === 'u')
+      ) {
+        event.preventDefault();
+      }
+    });
+
     await win.loadURL(urlString);
     win.show();
     return { success: true };
@@ -344,6 +405,23 @@ ipcMain.handle('player-view-create', async (event, urlString: string, opts: { bo
 
     const view = new BrowserView({ webPreferences: { preload: path.join(__dirname, 'preload.js'), sandbox: true, nodeIntegration: false } });
     playerViews.set(contentsId, view);
+
+    // Disable DevTools for BrowserView
+    view.webContents.on('devtools-opened', () => {
+      view.webContents.closeDevTools();
+    });
+    view.webContents.on('before-input-event', (event, input) => {
+      if (
+        (input.key === 'F12') ||
+        (input.control && input.shift && input.key.toLowerCase() === 'i') ||
+        (input.control && input.shift && input.key.toLowerCase() === 'j') ||
+        (input.control && input.shift && input.key.toLowerCase() === 'c') ||
+        (input.control && input.key.toLowerCase() === 'u')
+      ) {
+        event.preventDefault();
+      }
+    });
+
     // Store the requested URL in meta so fullscreen handler can open it in a new window
     playerViewMeta.set(contentsId, { ...(playerViewMeta.get(contentsId) || {}), url: urlString });
     // Register cleanup when the owning renderer/WebContents is destroyed or crashes

@@ -387,6 +387,35 @@ export default function App() {
 
                   return (
             <>
+            {/* Custom title bar for frameless window */}
+            <div className="title-bar">
+              <div className="title-bar-content">
+                <span className="title-text">JStream</span>
+                <div className="title-bar-controls">
+                  <button 
+                    className="title-bar-button minimize" 
+                    onClick={() => (window as any).windowControls.minimize()}
+                    title="Minimize"
+                  >
+                    ─
+                  </button>
+                  <button 
+                    className="title-bar-button maximize" 
+                    onClick={() => (window as any).windowControls.maximize()}
+                    title="Maximize"
+                  >
+                    □
+                  </button>
+                  <button 
+                    className="title-bar-button close" 
+                    onClick={() => (window as any).windowControls.close()}
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            </div>
             <ChakraProvider value={defaultSystem}>
               <ErrorBoundary>
                 {featuredMovie && <HeroBanner movie={featuredMovie} onPlay={handlePlayMovie} onMore={handleSelectMovie} fullBleed isModalOpen={playerModalOpen || activeIndex === 10} isVisible={activeIndex === 0} />}

@@ -1810,6 +1810,80 @@ webview.video-embed {
   .player-modal-box{ width: calc(100vw - 28px); height: calc(100vh - 28px); }
 }
 
+/* Custom title bar for frameless window */
+.title-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  background: #141414;
+  z-index: 10000;
+  -webkit-app-region: drag;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.title-bar-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 16px;
+  height: 100%;
+}
+
+.title-text {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 500;
+  -webkit-app-region: drag;
+}
+
+.title-bar-controls {
+  display: flex;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.title-bar-button {
+  width: 32px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: #ffffff;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.title-bar-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.title-bar-button.minimize:hover {
+  background: rgba(255, 255, 0, 0.2);
+}
+
+.title-bar-button.close:hover {
+  background: rgba(255, 0, 0, 0.8);
+}
+
+/* Adjust header position to account for title bar */
+.app-header {
+  margin-top: 32px !important;
+}
+
+#hero-root {
+  margin-top: 32px !important;
+}
+
 
 
 
