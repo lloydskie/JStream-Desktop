@@ -30,6 +30,7 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
     const tmdbId = params && (params.tmdbId || params.tmdb_id || params.id || params.itemId);
     const season = params && (params.season || params.season_number);
     const episode = params && (params.episode || params.episode_number);
+    const progress = params && params.progress ? Math.floor(Number(params.progress)) : null;
     const pn = String(playerName || (params && params.player) || 'Aether');
     if ((params && params.player) && playerName && String(params.player) !== String(playerName)) {
       try { console.info('VideoPlayer: playerName prop differs from params.player; using prop ->', playerName, 'params.player ->', params.player); } catch(e) {}
@@ -43,18 +44,21 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
           u += `?theme=${encodeURIComponent(String(color))}`;
           if (wantAutoplay) u += `&autoplay=1`;
           if (wantAutoplayNext) u += `&autoplayNext=1`;
+          if (progress && progress > 0) u += `&startAt=${progress}`;
           return u;
         }
         if (season != null && episode != null) {
           let u = `https://vidfast.pro/tv/${tmdbId}/${season}/${episode}?theme=${encodeURIComponent(String(color))}`;
           if (wantAutoplay) u += `&autoplay=1`;
           if (wantAutoplayNext) u += `&autoplayNext=1`;
+          if (progress && progress > 0) u += `&startAt=${progress}`;
           return u;
         }
         {
           let u = `https://vidfast.pro/tv/${tmdbId}?theme=${encodeURIComponent(String(color))}`;
           if (wantAutoplay) u += `&autoplay=1`;
           if (wantAutoplayNext) u += `&autoplayNext=1`;
+          if (progress && progress > 0) u += `&startAt=${progress}`;
           return u;
         }
       }
@@ -81,20 +85,26 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
       case 'Draco': {
         if (type === 'movie') {
           let u = `https://vidlink.pro/movie/${id}`;
-          if (wantAutoplay) u += `?autoplay=1`;
-          if (wantAutoplayNext) u += `${wantAutoplay ? '&' : '?'}autoplayNext=1`;
+          let hasParam = false;
+          if (wantAutoplay) { u += `?autoplay=1`; hasParam = true; }
+          if (wantAutoplayNext) { u += `${hasParam ? '&' : '?'}autoplayNext=1`; hasParam = true; }
+          if (progress && progress > 0) { u += `${hasParam ? '&' : '?'}startAt=${progress}`; }
           return u;
         }
         if (season != null && episode != null) {
           let u = `https://vidlink.pro/tv/${id}/${season}/${episode}`;
-          if (wantAutoplay) u += `?autoplay=1`;
-          if (wantAutoplayNext) u += `${wantAutoplay ? '&' : '?'}autoplayNext=1`;
+          let hasParam = false;
+          if (wantAutoplay) { u += `?autoplay=1`; hasParam = true; }
+          if (wantAutoplayNext) { u += `${hasParam ? '&' : '?'}autoplayNext=1`; hasParam = true; }
+          if (progress && progress > 0) { u += `${hasParam ? '&' : '?'}startAt=${progress}`; }
           return u;
         }
         {
           let u = `https://vidlink.pro/tv/${id}`;
-          if (wantAutoplay) u += `?autoplay=1`;
-          if (wantAutoplayNext) u += `${wantAutoplay ? '&' : '?'}autoplayNext=1`;
+          let hasParam = false;
+          if (wantAutoplay) { u += `?autoplay=1`; hasParam = true; }
+          if (wantAutoplayNext) { u += `${hasParam ? '&' : '?'}autoplayNext=1`; hasParam = true; }
+          if (progress && progress > 0) { u += `${hasParam ? '&' : '?'}startAt=${progress}`; }
           return u;
         }
       }

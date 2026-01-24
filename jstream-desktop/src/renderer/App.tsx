@@ -104,7 +104,25 @@ export default function App() {
     const detach = attachGlobalScrollCapture();
     return () => detach && detach();
   }, []);
-  const [activeIndex, setActiveIndex] = useState<number>(0);
+  const [activeIndex, setActiveIndex] = useState<number>(() => {
+    // Restore active tab from localStorage on initial load
+    try {
+      const saved = localStorage.getItem('jstream_activeTab');
+      if (saved !== null) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed >= 0) return parsed;
+      }
+    } catch (e) {}
+    return 0;
+  });
+  
+  // Save active tab to localStorage when it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('jstream_activeTab', String(activeIndex));
+    } catch (e) {}
+  }, [activeIndex]);
+  
   const [selectedTmdbId, setSelectedTmdbId] = useState<number | null>(null);
   // legacy details page state removed — using modal state below
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);

@@ -57,7 +57,7 @@ export default function VideoPlayerPage({ playerType = 'movie', params = null, o
         <div className="player-title">{item.name || item.title}</div>
       </div>
       <div className="player-content">
-        <VideoPlayer player={player} type={playerType} params={params || { tmdbId: params.tmdbId }} />
+        <VideoPlayer player={player} type={playerType} params={{ ...(params || { tmdbId: params.tmdbId }), progress: savedPosition }} />
       </div>
     </div>
   );

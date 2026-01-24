@@ -210,6 +210,26 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
           }
         }
 
+        // Fetch watch progress for each item
+        if (db && typeof db.watchHistoryGet === 'function') {
+          for (const item of out) {
+            try {
+              const historyKey = `${item.type}:${item.id}`;
+              const history = await db.watchHistoryGet(historyKey);
+              if (history && history.position) {
+                item.progress = Number(history.position);
+                // Calculate progress percentage if we have runtime
+                const runtime = item.data?.runtime || (item.data?.episode_run_time && item.data?.episode_run_time[0]);
+                if (runtime) {
+                  item.progressPercent = Math.min(100, Math.round((item.progress / (runtime * 60)) * 100));
+                }
+              }
+            } catch (e) {
+              // ignore
+            }
+          }
+        }
+
         if (mounted) setItems(out);
       } catch (e) {
         console.error('ContinueWatching: failed to load recent items', e);
@@ -506,11 +526,22 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
                 ) : (
                   <div className="continue-logo-text">{entry.it.data?.title || entry.it.data?.name}</div>
                 )}
-                {/* Trailer overlay moved into modal; card itself no longer shows inline trailer */}
+                {/* Progress bar */}
+                {entry.it.progressPercent != null && entry.it.progressPercent > 0 && (
+                  <div className="watch-progress-bar">
+                    <div className="watch-progress-fill" style={{ width: `${entry.it.progressPercent}%` }} />
+                  </div>
+                )}
               </div>
             ) : (
               <div className="continue-backdrop placeholder">
                 <div className="continue-logo-text">{entry.it.data?.title || entry.it.data?.name}</div>
+                {/* Progress bar for placeholder cards */}
+                {entry.it.progressPercent != null && entry.it.progressPercent > 0 && (
+                  <div className="watch-progress-bar">
+                    <div className="watch-progress-fill" style={{ width: `${entry.it.progressPercent}%` }} />
+                  </div>
+                )}
               </div>
             )}
           </div>

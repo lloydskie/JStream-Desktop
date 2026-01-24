@@ -26,7 +26,7 @@ export default function MyListPage({ onPlay, onSelect }: { onPlay?: (id:number|s
     try { return window.location.origin; } catch (e) { return 'https://jstream.app'; }
   })();
 
-  // Helper to fetch item details with logo
+  // Helper to fetch item details with logo and progress
   async function fetchItemDetails(id: number, type: 'movie' | 'tv' | null): Promise<any | null> {
     try {
       let resolvedType: 'movie' | 'tv' = 'movie';
@@ -56,7 +56,28 @@ export default function MyListPage({ onPlay, onSelect }: { onPlay?: (id:number|s
       } catch (e) {
         // ignore
       }
-      return { id, type: resolvedType, data, backdrop, poster, logoPath };
+      
+      // Fetch watch progress
+      let progress: number | null = null;
+      let progressPercent: number | null = null;
+      try {
+        const db = (window as any).database;
+        if (db && typeof db.watchHistoryGet === 'function') {
+          const historyKey = `${resolvedType}:${id}`;
+          const history = await db.watchHistoryGet(historyKey);
+          if (history && history.position) {
+            progress = Number(history.position);
+            const runtime = data?.runtime || (data?.episode_run_time && data?.episode_run_time[0]);
+            if (runtime) {
+              progressPercent = Math.min(100, Math.round((progress / (runtime * 60)) * 100));
+            }
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+      
+      return { id, type: resolvedType, data, backdrop, poster, logoPath, progress, progressPercent };
     } catch (e) {
       return null;
     }
@@ -443,10 +464,22 @@ export default function MyListPage({ onPlay, onSelect }: { onPlay?: (id:number|s
                     ) : (
                       <div className="continue-logo-text">{it.data?.title || it.data?.name}</div>
                     )}
+                    {/* Progress bar */}
+                    {it.progressPercent != null && it.progressPercent > 0 && (
+                      <div className="watch-progress-bar">
+                        <div className="watch-progress-fill" style={{ width: `${it.progressPercent}%` }} />
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="continue-backdrop placeholder">
                     <div className="continue-logo-text">{it.data?.title || it.data?.name}</div>
+                    {/* Progress bar for placeholder cards */}
+                    {it.progressPercent != null && it.progressPercent > 0 && (
+                      <div className="watch-progress-bar">
+                        <div className="watch-progress-fill" style={{ width: `${it.progressPercent}%` }} />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

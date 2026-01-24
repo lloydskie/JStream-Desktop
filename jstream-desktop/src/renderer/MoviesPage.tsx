@@ -11,11 +11,56 @@ export default function MoviesPage({ genres = [], onSelectMovie, onPlayMovie }: 
   const [featured, setFeatured] = useState<any|null>(null);
 
   useEffect(() => {
-    // fetch a featured movie for the hero (first popular)
+    // fetch a featured movie for the hero (random from top 10 with available YouTube video)
     (async () => {
       try {
         const pop = await fetchTMDB('movie/popular');
-        setFeatured((pop && pop.results && pop.results[0]) || null);
+        const top10 = (pop?.results || []).slice(0, 10);
+        // Shuffle to randomize selection order
+        const shuffled = [...top10].sort(() => Math.random() - 0.5);
+        
+        // Helper to check if a YouTube video is actually available
+        // Uses noembed.com which properly returns errors for unavailable videos
+        const isYouTubeVideoAvailable = async (videoKey: string): Promise<boolean> => {
+          try {
+            const response = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoKey}`);
+            if (!response.ok) return false;
+            const data = await response.json();
+            // noembed returns error field for unavailable videos
+            return !data.error && data.title;
+          } catch {
+            return false;
+          }
+        };
+        
+        let feat: any = null;
+        for (const candidate of shuffled) {
+          if (!candidate?.id) continue;
+          try {
+            const videos = await fetchTMDB(`movie/${candidate.id}/videos`, { language: 'en-US' });
+            const results = videos?.results || [];
+            // Find YouTube videos with preferred types
+            const youtubeVideos = results.filter((v: any) => 
+              (v.site || '').toLowerCase() === 'youtube' && 
+              v.key && 
+              ['Trailer', 'Teaser', 'Featurette', 'Clip'].includes(v.type)
+            );
+            // Check if any YouTube video is actually available
+            for (const video of youtubeVideos) {
+              const isAvailable = await isYouTubeVideoAvailable(video.key);
+              if (isAvailable) {
+                feat = candidate;
+                break;
+              }
+            }
+            if (feat) break;
+          } catch (e) {
+            // skip this candidate on error
+          }
+        }
+        // Fallback to first item if none have available YouTube videos
+        if (!feat) feat = shuffled[0] || null;
+        setFeatured(feat);
       } catch (e) {
         // ignore
       }
