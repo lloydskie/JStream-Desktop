@@ -30,7 +30,10 @@ export default function VideoPlayerPage({ playerType = 'movie', params = null, o
         }
         // load previous saved watch position
         try {
-          const row = await (window as any).database.watchHistoryGet(String(params.tmdbId));
+          const rawId = String(params.tmdbId);
+          const historyKey = `${playerType}:${rawId}`;
+          let row = await (window as any).database.watchHistoryGet(historyKey);
+          if (!row) row = await (window as any).database.watchHistoryGet(rawId);
           if (row && row.position) setSavedPosition(Number(row.position));
         } catch (e) {
           console.error('Failed to load watch history:', e);

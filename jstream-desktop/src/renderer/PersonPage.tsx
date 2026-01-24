@@ -29,12 +29,12 @@ export default function PersonPage({ personId, onSelectWork }: { personId?: numb
     })();
   }, [personId]);
 
-  if (!personId) return <Box p={6}>No person selected.</Box>;
-  if (loading) return <Box p={6}><Spinner /></Box>;
-  if (!person) return <Box p={6}>Person not found.</Box>;
+  if (!personId) return <Box p={6} pt="200px">No person selected.</Box>;
+  if (loading) return <Box p={6} pt="200px"><Spinner /></Box>;
+  if (!person) return <Box p={6} pt="200px">Person not found.</Box>;
 
   return (
-    <Box p={6}>
+    <Box p={6} pt="200px">
       <div style={{display:'flex',gap:16}}>
         <img src={person.profile_path ? `https://image.tmdb.org/t/p/w300${person.profile_path}` : undefined} alt={person.name} style={{width:160,height:160,objectFit:'cover',borderRadius:'50%'}} />
         <div>

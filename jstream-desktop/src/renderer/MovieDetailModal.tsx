@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Box, Button, Spinner } from '@chakra-ui/react';
 import { fetchTMDB } from '../utils/tmdbClient';
 
@@ -6,6 +6,7 @@ export default function MovieDetailModal({ tmdbId, onPlay }: { tmdbId?: number |
   // Movie Detail Modal
   const [movie, setMovie] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const isHoveringRef = useRef(false);
 
   useEffect(() => {
     (async () => {
@@ -22,12 +23,51 @@ export default function MovieDetailModal({ tmdbId, onPlay }: { tmdbId?: number |
     })();
   }, [tmdbId]);
 
+  // Pause hero trailer when hovering over this modal
+  function pauseHero() {
+    try {
+      const ctrl = (window as any).__appTrailerController;
+      if (ctrl && typeof ctrl.pause === 'function') ctrl.pause();
+      else window.dispatchEvent(new CustomEvent('app:pause-hero-trailer'));
+    } catch (e) { window.dispatchEvent(new CustomEvent('app:pause-hero-trailer')); }
+  }
+
+  // Resume hero trailer when hover ends (unless another modal is open)
+  function resumeHero() {
+    try {
+      // Don't resume background hero if a details modal is open
+      if ((window as any).__heroModalOpen) return;
+      const ctrl = (window as any).__appTrailerController;
+      if (ctrl && typeof ctrl.resume === 'function') ctrl.resume();
+      else window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
+    } catch (e) { window.dispatchEvent(new CustomEvent('app:resume-hero-trailer')); }
+  }
+
+  function handleMouseEnter() {
+    isHoveringRef.current = true;
+    pauseHero();
+  }
+
+  function handleMouseLeave() {
+    isHoveringRef.current = false;
+    resumeHero();
+  }
+
+  // Cleanup: resume hero if component unmounts while hovering
+  useEffect(() => {
+    return () => {
+      if (isHoveringRef.current) {
+        resumeHero();
+      }
+    };
+  }, []);
+
   if (!tmdbId) return <div>Select a movie to view details.</div>;
   if (loading) return <Spinner />;
   if (!movie) return <div>Movie not found.</div>;
 
   return (
-    <div className="detail-hero">
+    <div className="detail-hero" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
       <img className="detail-poster" src={movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : undefined} alt={movie.title} />
       <div className="detail-info">
         <div className="detail-title">{movie.title}</div>

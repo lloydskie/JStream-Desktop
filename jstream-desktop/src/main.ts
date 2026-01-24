@@ -19,6 +19,55 @@ import adblock from './adblock';
 import started from 'electron-squirrel-startup';
 import db from './main/database';
 
+// Recent watches list stored as JSON with separate movie/tv id arrays
+const recentWatchesPath = path.join(app.getPath('userData'), 'recent_watches.json');
+type RecentWatches = { movie: number[]; tv: number[] };
+function normalizeRecentWatches(input: any): RecentWatches {
+  if (Array.isArray(input)) {
+    const list = input.map((v) => Number(v)).filter((v) => Number.isFinite(v));
+    return { movie: list, tv: [] };
+  }
+  const movie = Array.isArray(input?.movie) ? input.movie.map((v: any) => Number(v)).filter((v: any) => Number.isFinite(v)) : [];
+  const tv = Array.isArray(input?.tv) ? input.tv.map((v: any) => Number(v)).filter((v: any) => Number.isFinite(v)) : [];
+  return { movie, tv };
+}
+function loadRecentWatches(): RecentWatches {
+  try {
+    const raw = fs.readFileSync(recentWatchesPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return normalizeRecentWatches(parsed);
+  } catch (e) {
+    // ignore
+  }
+  return { movie: [], tv: [] };
+}
+function saveRecentWatches(data: RecentWatches) {
+  try {
+    fs.writeFileSync(recentWatchesPath, JSON.stringify({ movie: data.movie, tv: data.tv }, null, 2));
+  } catch (e) {
+    console.error('Failed to save recent_watches.json', e);
+  }
+}
+function addRecentWatchId(itemIdRaw: string | number) {
+  const raw = String(itemIdRaw ?? '');
+  if (!raw) return;
+  let type: 'movie'|'tv' = 'movie';
+  let idStr = raw;
+  if (raw.includes(':')) {
+    const parts = raw.split(':');
+    type = (parts[0] === 'tv') ? 'tv' : 'movie';
+    idStr = parts[1];
+  }
+  const id = Number(idStr);
+  if (!Number.isFinite(id)) return;
+  const data = loadRecentWatches();
+  const list = type === 'tv' ? data.tv : data.movie;
+  const filtered = list.filter((v) => v !== id);
+  filtered.unshift(id);
+  if (type === 'tv') data.tv = filtered; else data.movie = filtered;
+  saveRecentWatches(data);
+}
+
 // IPC handlers for database
 ipcMain.handle('set-personalization', async (event, key: string, value: string) => {
   const stmt = db.prepare('INSERT OR REPLACE INTO personalization (user_id, key, value) VALUES (1, ?, ?)');
@@ -93,6 +142,7 @@ ipcMain.handle('watch-history-set', async (event, itemId: string, position: numb
   } else {
     insert.run(itemId, position);
   }
+  try { addRecentWatchId(itemId); } catch (e) { /* ignore */ }
   return true;
 });
 
@@ -105,6 +155,53 @@ ipcMain.handle('watch-history-get', async (event, itemId: string) => {
 ipcMain.handle('watch-history-list', async (event) => {
   const stmt = db.prepare('SELECT item_id, position, watched_at FROM watch_history WHERE user_id = 1 ORDER BY watched_at DESC');
   return stmt.all();
+});
+
+// Recent watches JSON list handlers
+ipcMain.handle('recent-watches-get', async () => loadRecentWatches());
+ipcMain.handle('recent-watches-set', async (event, list: number[] | { movie?: number[]; tv?: number[] }) => {
+  if (Array.isArray(list)) {
+    const cleaned = list.map((v) => Number(v)).filter((v) => Number.isFinite(v));
+    saveRecentWatches({ movie: cleaned, tv: [] });
+  } else if (list && typeof list === 'object') {
+    const movie = Array.isArray(list.movie) ? list.movie.map((v) => Number(v)).filter((v) => Number.isFinite(v)) : [];
+    const tv = Array.isArray(list.tv) ? list.tv.map((v) => Number(v)).filter((v) => Number.isFinite(v)) : [];
+    saveRecentWatches({ movie, tv });
+  }
+  return true;
+});
+ipcMain.handle('recent-watches-add', async (event, itemId: string | number) => {
+  addRecentWatchId(itemId);
+  return true;
+});
+
+// Delete a watch history entry by item_id (e.g., "movie:123" or "tv:456")
+ipcMain.handle('watch-history-delete', async (event, itemId: string) => {
+  try {
+    const stmt = db.prepare('DELETE FROM watch_history WHERE user_id = 1 AND item_id = ?');
+    stmt.run(itemId);
+    return true;
+  } catch (e) {
+    console.error('watch-history-delete failed', e);
+    return false;
+  }
+});
+
+// Remove a specific item from recent watches by id and type
+ipcMain.handle('recent-watches-remove', async (event, id: number, type: 'movie' | 'tv') => {
+  try {
+    const data = loadRecentWatches();
+    if (type === 'tv') {
+      data.tv = data.tv.filter((v) => v !== id);
+    } else {
+      data.movie = data.movie.filter((v) => v !== id);
+    }
+    saveRecentWatches(data);
+    return true;
+  } catch (e) {
+    console.error('recent-watches-remove failed', e);
+    return false;
+  }
 });
 
 // Window control handlers for frameless window
@@ -132,6 +229,17 @@ ipcMain.handle('window-close', async (event) => {
 ipcMain.handle('window-is-maximized', async (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   return win ? win.isMaximized() : false;
+});
+
+ipcMain.handle('window-open-devtools', async (event) => {
+  try {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && !win.isDestroyed()) {
+      win.webContents.openDevTools({ mode: 'detach' });
+    }
+  } catch (e) {
+    console.error('window-open-devtools failed', e);
+  }
 });
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
@@ -189,24 +297,27 @@ const createWindow = () => {
     );
   }
 
-  // Disable DevTools completely - prevent opening via shortcuts or programmatically
-  mainWindow.webContents.on('devtools-opened', () => {
-    mainWindow.webContents.closeDevTools();
-  });
+  const allowDevtools = process.env.JSTREAM_DEVTOOLS === '1';
+  // Disable DevTools unless explicitly allowed
+  if (!allowDevtools) {
+    mainWindow.webContents.on('devtools-opened', () => {
+      mainWindow.webContents.closeDevTools();
+    });
 
-  // Prevent DevTools keyboard shortcuts
-  mainWindow.webContents.on('before-input-event', (event, input) => {
-    // Block common DevTools shortcuts
-    if (
-      (input.key === 'F12') ||
-      (input.control && input.shift && input.key.toLowerCase() === 'i') ||
-      (input.control && input.shift && input.key.toLowerCase() === 'j') ||
-      (input.control && input.shift && input.key.toLowerCase() === 'c') ||
-      (input.control && input.key.toLowerCase() === 'u')
-    ) {
-      event.preventDefault();
-    }
-  });
+    // Prevent DevTools keyboard shortcuts
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      // Block common DevTools shortcuts
+      if (
+        (input.key === 'F12') ||
+        (input.control && input.shift && input.key.toLowerCase() === 'i') ||
+        (input.control && input.shift && input.key.toLowerCase() === 'j') ||
+        (input.control && input.shift && input.key.toLowerCase() === 'c') ||
+        (input.control && input.key.toLowerCase() === 'u')
+      ) {
+        event.preventDefault();
+      }
+    });
+  }
 };
 
 // This method will be called when Electron has finished
@@ -326,8 +437,13 @@ ipcMain.handle('check-url-headers', async (event, urlString: string) => {
 });
 
 // IPC: open a dedicated BrowserWindow for the player URL
+const playerWindowMeta = new Map<number, { prevFullScreen: boolean, prevMaximized: boolean }>();
 ipcMain.handle('open-player-window', async (event, urlString: string) => {
   try {
+    const parentWin = BrowserWindow.fromWebContents(event.sender as any) || null;
+    if (parentWin) {
+      playerWindowMeta.set(parentWin.id, { prevFullScreen: parentWin.isFullScreen(), prevMaximized: parentWin.isMaximized() });
+    }
     const win = new BrowserWindow({
       width: 1100,
       height: 700,
@@ -352,6 +468,30 @@ ipcMain.handle('open-player-window', async (event, urlString: string) => {
       }
     });
 
+    if (parentWin) {
+      win.on('closed', () => {
+        try {
+          const meta = playerWindowMeta.get(parentWin.id);
+          if (meta) {
+            try { parentWin.setFullScreen(!!meta.prevFullScreen); } catch (e) {}
+            try { (parentWin as any).setSimpleFullScreen && (parentWin as any).setSimpleFullScreen(!!meta.prevFullScreen); } catch (e) {}
+            if (meta.prevMaximized) {
+              try { parentWin.maximize(); } catch (e) {}
+            } else {
+              try { parentWin.unmaximize(); } catch (e) {}
+            }
+            playerWindowMeta.delete(parentWin.id);
+          } else {
+            try { parentWin.setFullScreen(false); } catch (e) {}
+            try { (parentWin as any).setSimpleFullScreen && (parentWin as any).setSimpleFullScreen(false); } catch (e) {}
+            try { parentWin.unmaximize(); } catch (e) {}
+          }
+        } catch (e) {
+          console.error('Failed to restore parent window state after player close', e);
+        }
+      });
+    }
+
     await win.loadURL(urlString);
     win.show();
     return { success: true };
@@ -363,7 +503,7 @@ ipcMain.handle('open-player-window', async (event, urlString: string) => {
 
 // BrowserView management: create/destroy/update a BrowserView attached to the caller's BrowserWindow
 const playerViews = new Map<number, BrowserView>();
-const playerViewMeta = new Map<number, { originalBounds?: Electron.Rectangle, prevFullScreen?: boolean, url?: string, enterHandler?: () => void, fullscreenWindowId?: number }>();
+const playerViewMeta = new Map<number, { originalBounds?: Electron.Rectangle, prevFullScreen?: boolean, prevMaximized?: boolean, url?: string, enterHandler?: () => void, leaveHandler?: () => void, fullscreenWindowId?: number }>();
 
 ipcMain.handle('player-view-create', async (event, urlString: string, opts: { bounds?: { x: number, y: number, width: number, height: number } | null } = {}) => {
   try {
@@ -434,6 +574,7 @@ ipcMain.handle('player-view-create', async (event, urlString: string, opts: { bo
             try {
               const meta = playerViewMeta.get(contentsId);
               if (meta && meta.enterHandler) try { existing.webContents.removeListener('enter-html-full-screen', meta.enterHandler as any); } catch (e) {}
+              if (meta && meta.leaveHandler) try { existing.webContents.removeListener('leave-html-full-screen', meta.leaveHandler as any); } catch (e) {}
               const pwParent = BrowserWindow.fromWebContents(owner);
               if (pwParent) try { pwParent.removeBrowserView(existing); } catch (e) {}
               try { (existing.webContents as any).destroy(); } catch (e) {}
@@ -454,6 +595,12 @@ ipcMain.handle('player-view-create', async (event, urlString: string, opts: { bo
     const enterHandler = () => {
       try {
         console.log('BrowserView enter-html-full-screen detected');
+        try {
+          const meta = playerViewMeta.get(contentsId) || {};
+          meta.prevFullScreen = parentWin.isFullScreen();
+          meta.prevMaximized = parentWin.isMaximized();
+          playerViewMeta.set(contentsId, { ...meta, enterHandler });
+        } catch (e) {}
         const meta = playerViewMeta.get(contentsId) || {};
         const urlToOpen = meta.url || '';
         console.log('Sending fullscreen request with URL:', urlToOpen);
@@ -465,8 +612,24 @@ ipcMain.handle('player-view-create', async (event, urlString: string, opts: { bo
         console.error('enterHandler error', e);
       }
     };
+    const leaveHandler = () => {
+      try {
+        console.log('BrowserView leave-html-full-screen detected');
+        const meta = playerViewMeta.get(contentsId) || {};
+        if (!meta.prevFullScreen) {
+          try { parentWin.setFullScreen(false); } catch (e) {}
+          try { (parentWin as any).setSimpleFullScreen && (parentWin as any).setSimpleFullScreen(false); } catch (e) {}
+        }
+        if (meta.prevMaximized === false && parentWin.isMaximized()) {
+          try { parentWin.unmaximize(); } catch (e) {}
+        }
+      } catch (e) {
+        console.error('leaveHandler error', e);
+      }
+    };
     view.webContents.on('enter-html-full-screen', enterHandler as any);
-    playerViewMeta.set(contentsId, { originalBounds: view.getBounds(), enterHandler });
+    view.webContents.on('leave-html-full-screen', leaveHandler as any);
+    playerViewMeta.set(contentsId, { originalBounds: view.getBounds(), enterHandler, leaveHandler });
     parentWin.setBrowserView(view);
 
     // Compute bounds: use provided bounds (window coordinates) or full client area
@@ -505,6 +668,7 @@ ipcMain.handle('player-view-destroy', async (event) => {
         // remove listeners if present
         const meta = playerViewMeta.get(contentsId);
         if (meta && meta.enterHandler) try { existing.webContents.removeListener('enter-html-full-screen', meta.enterHandler as any); } catch (e) {}
+        if (meta && meta.leaveHandler) try { existing.webContents.removeListener('leave-html-full-screen', meta.leaveHandler as any); } catch (e) {}
         parentWin.removeBrowserView(existing);
         (existing.webContents as any).destroy();
       } catch (e) {}

@@ -63,19 +63,35 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
         } else {
           let recentRawLocal: any = [];
           try {
+            if (db && typeof db.recentWatchesGet === 'function') {
+              const recentList = await db.recentWatchesGet();
+              if (Array.isArray(recentList) && recentList.length > 0) {
+                recentRawLocal = recentList.map((id: number) => ({ id, type: null }));
+              } else if (recentList && typeof recentList === 'object') {
+                const movieIds = Array.isArray(recentList.movie) ? recentList.movie : [];
+                const tvIds = Array.isArray(recentList.tv) ? recentList.tv : [];
+                const merged: any[] = [];
+                for (const id of movieIds) merged.push({ id: Number(id), type: 'movie' });
+                for (const id of tvIds) merged.push({ id: Number(id), type: 'tv' });
+                if (merged.length > 0) recentRawLocal = merged;
+              }
+            }
             if (db && typeof db.watchHistoryList === 'function') {
               const history = await db.watchHistoryList();
               // Parse item_id like "movie:123" or just "123" into { id: 123, type: 'movie' }
-              recentRawLocal = history.map((h: any) => {
-                const itemId = h.item_id;
-                if (itemId.includes(':')) {
-                  const [type, idStr] = itemId.split(':');
+              if (!recentRawLocal || recentRawLocal.length === 0) {
+                recentRawLocal = history.map((h: any) => {
+                const itemIdRaw = h && h.item_id;
+                const itemIdStr = String(itemIdRaw ?? '');
+                if (!itemIdStr) return null;
+                if (itemIdStr.includes(':')) {
+                  const [type, idStr] = itemIdStr.split(':');
                   return { id: Number(idStr), type: type || 'movie' };
-                } else {
-                  // Assume movie if no type
-                  return { id: Number(itemId), type: 'movie' };
                 }
-              });
+                // Assume movie if no type
+                return { id: Number(itemIdStr), type: 'movie' };
+                }).filter(Boolean);
+              }
             }
           } catch (e) {
             // ignore
@@ -151,10 +167,25 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
           if (typeof entry === 'number' || typeof entry === 'string') id = Number(entry);
           else id = Number(entry.tmdbId || entry.tmdb_id || entry.id || entry.movieId || entry.mediaId || entry.tmdb || entry.itemId || null);
           if (!id || Number.isNaN(id)) continue;
-          const type = (entry.type || entry.itemType || entry.mediaType || (entry.tv ? 'tv' : undefined) || 'movie') as 'movie'|'tv';
-          console.log(`ContinueWatching: trying to fetch ${type}/${id}`);
+          const entryType = (entry.type || entry.itemType || entry.mediaType || (entry.tv ? 'tv' : undefined) || null) as ('movie'|'tv'|null);
+          let type: 'movie'|'tv' = 'movie';
+          let data: any = null;
           try {
-            const data = await fetchTMDB(`${type}/${id}`);
+            if (entryType) {
+              type = entryType;
+              console.log(`ContinueWatching: trying to fetch ${type}/${id}`);
+              data = await fetchTMDB(`${type}/${id}`);
+            } else {
+              try {
+                type = 'movie';
+                console.log(`ContinueWatching: trying to fetch movie/${id}`);
+                data = await fetchTMDB(`movie/${id}`);
+              } catch (e) {
+                type = 'tv';
+                console.log(`ContinueWatching: trying to fetch tv/${id}`);
+                data = await fetchTMDB(`tv/${id}`);
+              }
+            }
             console.log(`ContinueWatching: fetched ${type}/${id} successfully`);
             if (!mounted) break;
             const backdrop = data.backdrop_path || null;
@@ -277,6 +308,27 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
       };
     }
   }, [showPreviewModal]);
+
+  // Delete item from Continue Watching list
+  async function handleDelete(id: number, type: 'movie' | 'tv', idx: number) {
+    try {
+      const db = (window as any).database;
+      // Remove from watch history
+      if (db && typeof db.watchHistoryDelete === 'function') {
+        await db.watchHistoryDelete(`${type}:${id}`);
+      }
+      // Remove from recent watches
+      if (db && typeof db.recentWatchesRemove === 'function') {
+        await db.recentWatchesRemove(id, type);
+      }
+      // Remove from local state
+      setItems(prev => prev.filter((_, i) => i !== idx));
+    } catch (e) {
+      console.error('Failed to delete item:', e);
+      // Still remove from local state even if DB operation fails
+      setItems(prev => prev.filter((_, i) => i !== idx));
+    }
+  }
 
     // Expose a small debug control when a dev flag is set so we can inspect
   // the raw recent data in the running app without modifying the DB.
@@ -533,23 +585,18 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 3v18l15-9L5 3z" fill="currentColor"/></svg>
                       <span>Play</span>
                     </button>
-                    <button className="preview-btn" aria-label="Add to list" onClick={async (ev) => {
+                    <button className="preview-btn remove" aria-label="Remove from list" onClick={async (ev) => {
                       ev.stopPropagation();
                       const it = items[hoverIndex];
-                      try {
-                        const db = (window as any).database;
-                        if (db && typeof db.favoritesAdd === 'function') {
-                          await db.favoritesAdd(String(it.id), it.type || 'movie');
-                          console.debug('ContinueWatching: added to favorites', it.id);
-                        } else if (db && typeof db.watchlistAdd === 'function') {
-                          await db.watchlistAdd(String(it.id), it.type || 'movie');
-                          console.debug('ContinueWatching: added to watchlist', it.id);
-                        } else {
-                          console.debug('ContinueWatching: no DB add function available');
-                        }
-                      } catch (e) { console.error('ContinueWatching: add to list failed', e); }
+                      const idx = hoverIndex;
+                      // Close the modal first
+                      setShowPreviewModal(false);
+                      setHoverIndex(null);
+                      setHoverTrailerKey(null);
+                      // Then delete the item
+                      await handleDelete(it.id, it.type, idx);
                     }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     </button>
                   </div>
                   <div className="preview-actions-right">

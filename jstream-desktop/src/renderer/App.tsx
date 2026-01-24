@@ -7,9 +7,11 @@ import DetailsModal from './DetailsModal';
 import VideoPlayerPage from './VideoPlayerPage';
 import VideoPlayer from './VideoPlayer';
 import ProfilePage from './ProfilePage';
+import MyListPage from './MyListPage';
 import ErrorBoundary from './ErrorBoundary';
 import SearchPage from './SearchPage';
 import MoviesPage from './MoviesPage';
+import BrowseLanguagesPage from './BrowseLanguagesPage';
 import TVPage from './TVPage';
 import AnimePage from './AnimePage';
 import CollectionsPage from './CollectionsPage';
@@ -304,6 +306,7 @@ export default function App() {
 
   function handlePlayMovie(tmdbId: number | string, type: 'movie'|'tv' = 'movie', params: Record<string, any> = {}) {
     const idStr = String(tmdbId);
+    const historyKey = `${type}:${idStr}`;
     // If a details modal is open, suppress its resume behavior and close it so
     // the player modal can appear above it. DetailsModal checks
     // `window.__suppressHeroResume` and will skip resuming the page hero.
@@ -345,7 +348,8 @@ export default function App() {
     // Allow DetailsModal cleanup to finish without suppressing future resumes.
     try { delete (window as any).__suppressHeroResume; } catch (e) { /* ignore */ }
     // Save to watch history when starting to play
-    try { (window as any).database.watchHistorySet(idStr, 0); } catch(e) { console.error('watchHistorySet on play failed', e); }
+    try { (window as any).database.watchHistorySet(historyKey, 0); } catch(e) { console.error('watchHistorySet on play failed', e); }
+    try { (window as any).database.recentWatchesAdd(historyKey); } catch(e) { /* ignore */ }
   }
 
   function handleBackFromPlayer() {
@@ -538,8 +542,8 @@ export default function App() {
                 <TabPanel sx={{padding: 0}}><TVPage genres={tvGenres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
                 <TabPanel sx={{padding: 0}}><MoviesPage genres={genres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
                 <TabPanel sx={{padding: 0}}><div>New & Popular content here</div></TabPanel>
-                <TabPanel sx={{padding: 0}}><div>My List content here</div></TabPanel>
-                <TabPanel sx={{padding: 0}}><div>Browse by Languages content here</div></TabPanel>
+                <TabPanel sx={{padding: 0}}><MyListPage onPlay={handlePlayMovie} onSelect={handleSelectMovie} /></TabPanel>
+                <TabPanel sx={{padding: 0}}><BrowseLanguagesPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
                 <TabPanel sx={{padding: 0}}>
                   <SearchPage
                     movieGenres={genres}

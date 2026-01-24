@@ -239,10 +239,19 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
       setPausedExternally(true);
       setIsPlaying(false);
       try {
-        const el = document.querySelector('.hero-trailer iframe') as HTMLIFrameElement | null;
-        if (el && el.contentWindow) {
-          // pause via YouTube JS API
-          el.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+        const els = Array.from(document.querySelectorAll('.hero-trailer iframe')) as HTMLIFrameElement[];
+        for (const el of els) {
+          try {
+            if (!el || !el.contentWindow) continue;
+            const src = String(el.src || '');
+            if (src.includes('player.vimeo')) {
+              el.contentWindow.postMessage(JSON.stringify({ method: 'pause' }), '*');
+            } else {
+              // YouTube pause/stop
+              el.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+              el.contentWindow.postMessage('{"event":"command","func":"stopVideo","args":""}', '*');
+            }
+          } catch (e) { /* ignore per-iframe */ }
         }
       } catch (e) { /* ignore */ }
     }
@@ -253,9 +262,18 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
       // schedule a tiny timeout so the pausedExternally state update has taken effect
       setPausedExternally(false);
       try {
-        const el = document.querySelector('.hero-trailer iframe') as HTMLIFrameElement | null;
-        if (el && el.contentWindow) {
-          el.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+        const els = Array.from(document.querySelectorAll('.hero-trailer iframe')) as HTMLIFrameElement[];
+        for (const el of els) {
+          try {
+            if (!el || !el.contentWindow) continue;
+            const src = String(el.src || '');
+            if (src.includes('player.vimeo')) {
+              el.contentWindow.postMessage(JSON.stringify({ method: 'play' }), '*');
+            } else {
+              // YouTube play
+              el.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+            }
+          } catch (e) { /* ignore per-iframe */ }
         }
       } catch (e) { /* ignore */ }
       // ensure visual `isPlaying` flips after state update
@@ -427,6 +445,10 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
     return () => { mounted = false; };
   }, [movie?.id, resolvedCert]);
 
+  const ytOrigin = (() => {
+    try { return window.location.origin; } catch (e) { return 'https://jstream.app'; }
+  })();
+
   const jsx = (
     <section ref={heroRef as any} className={"hero-banner" + (fullBleed ? ' full-bleed' : '') + (isPlaying ? ' playing' : '')} style={{backgroundImage: `url(${backdrop})`, display: isVisible ? 'block' : 'none'}}>
       {/* autoplaying, muted trailer placed behind the hero content */}
@@ -448,7 +470,7 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
             })()
           ) : (
             <iframe
-              src={`https://www.youtube.com/embed/${encodeURIComponent(String(trailerKey))}?rel=0&autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&playsinline=1&modestbranding=1&loop=1&playlist=${encodeURIComponent(String(trailerKey))}&enablejsapi=1&origin=https://jstream.app`}
+              src={`https://www.youtube.com/embed/${encodeURIComponent(String(trailerKey))}?rel=0&autoplay=1&mute=${isMuted ? 1 : 0}&controls=0&playsinline=1&modestbranding=1&loop=1&playlist=${encodeURIComponent(String(trailerKey))}&enablejsapi=1&origin=${encodeURIComponent(ytOrigin)}`}
               title="Trailer"
               frameBorder="0"
               allow="autoplay; encrypted-media"

@@ -96,6 +96,11 @@ contextBridge.exposeInMainWorld('database', {
   watchHistorySet: (itemId: string, position: number) => ipcRenderer.invoke('watch-history-set', itemId, position),
   watchHistoryGet: (itemId: string) => ipcRenderer.invoke('watch-history-get', itemId),
   watchHistoryList: () => ipcRenderer.invoke('watch-history-list'),
+  watchHistoryDelete: (itemId: string) => ipcRenderer.invoke('watch-history-delete', itemId),
+  recentWatchesGet: () => ipcRenderer.invoke('recent-watches-get'),
+  recentWatchesSet: (list: number[]) => ipcRenderer.invoke('recent-watches-set', list),
+  recentWatchesAdd: (itemId: string | number) => ipcRenderer.invoke('recent-watches-add', itemId),
+  recentWatchesRemove: (id: number, type: 'movie' | 'tv') => ipcRenderer.invoke('recent-watches-remove', id, type),
 });
 
 contextBridge.exposeInMainWorld('openExternal', {
@@ -173,4 +178,5 @@ contextBridge.exposeInMainWorld('windowControls', {
   maximize: () => ipcRenderer.invoke('window-maximize'),
   close: () => ipcRenderer.invoke('window-close'),
   isMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+  openDevtools: () => ipcRenderer.invoke('window-open-devtools'),
 });

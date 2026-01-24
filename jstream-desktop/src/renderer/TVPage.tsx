@@ -161,8 +161,8 @@ function TVGenreView({ genreId, genreName, onBack, onSelectShow, onPlayShow }: {
   }, [loading, hasMore, page]);
 
   return (
-    <Box>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+    <Box pt="200px">
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12, padding: '0 16px'}}>
         <div style={{display:'flex',gap:12,alignItems:'center'}}>
           <Button variant="ghost" onClick={onBack}>← Back</Button>
           <h2 style={{margin:0,fontSize:20,fontWeight:800}}>{genreName || 'Genre'}</h2>

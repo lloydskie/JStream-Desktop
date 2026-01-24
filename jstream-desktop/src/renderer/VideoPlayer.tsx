@@ -488,7 +488,9 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
       try {
         const tmdbId = String(params.tmdbId || params.tmdb_id || params.id || params.itemId);
         if (!tmdbId) return;
-        const pos = await (window as any).database.watchHistoryGet(tmdbId);
+        const historyKey = `${type}:${tmdbId}`;
+        let pos = await (window as any).database.watchHistoryGet(historyKey);
+        if (!pos) pos = await (window as any).database.watchHistoryGet(tmdbId);
         if (pos && Number(pos) > 0) setSavedPosition(Number(pos));
       } catch (e) {
         // ignore
@@ -513,11 +515,12 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
           const tmdbId = String(params.tmdbId || params.tmdb_id || params.id || params.itemId);
           // throttle saves to once every 10 seconds and when position changed enough
           if (!tmdbId) return;
+          const historyKey = `${type}:${tmdbId}`;
           const lastSaved = lastSavedRef.current || 0;
           if (Math.abs(position - lastSaved) > 5) { // save if changed > 5s
             lastSavedRef.current = position;
             try { if ((window as any).__JSTREAM_DEBUG) console.log('VideoPlayer: saving watch history for', tmdbId, 'at position', position); } catch (e) {}
-            try { (window as any).database.watchHistorySet(tmdbId, position); } catch (e) { if ((window as any).__JSTREAM_DEBUG) console.error('watchHistorySet failed', e); }
+            try { (window as any).database.watchHistorySet(historyKey, position); } catch (e) { if ((window as any).__JSTREAM_DEBUG) console.error('watchHistorySet failed', e); }
           }
         }
       } catch (e) {

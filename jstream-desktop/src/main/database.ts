@@ -187,6 +187,14 @@ db.prepare = (sql: string) => {
       }
     };
   }
+  if (sql.includes('DELETE FROM watch_history')) {
+    return {
+      run: (itemId: string) => {
+        db.watch_history = db.watch_history.filter((w: any) => !(w.user_id === 1 && w.item_id === itemId));
+        saveDb();
+      }
+    };
+  }
   // Default
   return {
     run: () => {},

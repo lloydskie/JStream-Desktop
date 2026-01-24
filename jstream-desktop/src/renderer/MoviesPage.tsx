@@ -129,7 +129,7 @@ export default function MoviesPage({ genres = [], onSelectMovie, onPlayMovie }: 
   );
 }
 
-function GenreView({ genreId, genreName, onBack, onSelectMovie, onPlayMovie }: { genreId:number, genreName?:string, onBack:()=>void, onSelectMovie?: (id:number)=>void, onPlayMovie?: (id:number|string, type?:string, params?:Record<string,any>)=>void }){
+function GenreView({ genreId, genreName, onBack, onSelectMovie, onPlayMovie }: { genreId:number, genreName?:string, onBack:()=>void, onSelectMovie?: (id:number, type?:'movie'|'tv')=>void, onPlayMovie?: (id:number|string, type?:string, params?:Record<string,any>)=>void }){
   const [items, setItems] = useState<any[]>([]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -175,8 +175,8 @@ function GenreView({ genreId, genreName, onBack, onSelectMovie, onPlayMovie }: {
   }, [loading, hasMore, page]);
 
   return (
-    <Box>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+    <Box pt="200px">
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12, padding: '0 16px'}}>
         <div style={{display:'flex',gap:12,alignItems:'center'}}>
           <Button variant="ghost" onClick={onBack}>← Back</Button>
           <h2 style={{margin:0,fontSize:20,fontWeight:800}}>{genreName || 'Genre'}</h2>
