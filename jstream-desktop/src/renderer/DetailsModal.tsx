@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Box, Button, Spinner, HStack, Text } from '@chakra-ui/react';
 import CustomSelect from './components/CustomSelect';
 import PlusMinusIcon from './components/icons/PlusMinusIcon';
@@ -462,18 +463,55 @@ export default function DetailsModal({ tmdbId, itemTypeHint, onPlay, onSelect, o
   const logoSrc = mediaLogo || (fallbackLogoPath ? `https://image.tmdb.org/t/p/w300${fallbackLogoPath}` : null);
 
   function handleClose() {
+    console.log('DetailsModal handleClose called');
     try { (window as any).__heroModalOpen = false; } catch (e) { /* ignore */ }
     try { window.dispatchEvent(new Event('app:resume-hero-trailer')); } catch (e) { /* ignore */ }
-    try { onClose && onClose(); } catch (e) { /* ignore */ }
+    try { onClose && onClose(); } catch (e) { console.error('onClose error:', e); }
   }
 
+  const closeButton = createPortal(
+    <button 
+      aria-label="Close details" 
+      className="details-modal-close-btn"
+      onClick={(e) => { 
+        e.preventDefault();
+        e.stopPropagation(); 
+        console.log('Close button clicked');
+        handleClose(); 
+      }} 
+      style={{ 
+        position: 'fixed', 
+        right: 'calc(7vw + 12px)', 
+        top: 'calc(2vh + 32px)', 
+        zIndex: 2147483646, 
+        background: 'rgba(20,20,20,0.95)', 
+        color: '#fff', 
+        border: '2px solid rgba(255,255,255,0.3)', 
+        padding: '10px 14px', 
+        borderRadius: '50%', 
+        cursor: 'pointer', 
+        fontSize: 20, 
+        fontWeight: 'bold',
+        lineHeight: 1,
+        width: 44,
+        height: 44,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        pointerEvents: 'auto'
+      }}
+    >✕</button>,
+    document.body
+  );
+
   return (
-    <div className="details-modal-overlay" onClick={() => handleClose()}>
-      <div ref={modalRef} className="details-modal-container" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <button aria-label="Close details" onClick={() => handleClose()} style={{ position: 'absolute', right: 12, top: 12, zIndex: 120010, background: 'rgba(255,255,255,0.06)', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: 6 }}>✕</button>
-        {/* Stationary action buttons for the modal hero (rendered outside the hero content so transforms won't affect them)
-            Moved to be a direct child of `.details-modal-container` (inserted below) to ensure it isn't nested inside transformed nodes. */}
-        <div className="details-modal-inner">
+    <>
+      {closeButton}
+      <div className="details-modal-overlay" onClick={() => handleClose()}>
+        <div ref={modalRef} className="details-modal-container" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+          {/* Stationary action buttons for the modal hero (rendered outside the hero content so transforms won't affect them)
+              Moved to be a direct child of `.details-modal-container` (inserted below) to ensure it isn't nested inside transformed nodes. */}
+          <div className="details-modal-inner">
           {/* Use a cloned DetailsHero component so the modal can adjust hero behavior/styles independently */}
           {item && (
             <DetailsHero movie={item} onPlay={(id, t) => onPlay && onPlay(id, t as any)} onMore={() => { /* no-op in modal */ }} fullBleed={false} isModalOpen={true} isVisible={true} mediaType={itemType} />
@@ -653,5 +691,6 @@ export default function DetailsModal({ tmdbId, itemTypeHint, onPlay, onSelect, o
       </div>
       
     </div>
+    </>
   );
 }

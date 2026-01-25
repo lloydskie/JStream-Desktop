@@ -411,6 +411,16 @@ body{
   justify-content: center;
   padding: 20px;
 }
+.details-modal-close-btn{
+  position: fixed !important;
+  z-index: 999999 !important;
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}
+.details-modal-close-btn:hover{
+  background: rgba(255,255,255,0.2) !important;
+  transform: scale(1.1);
+}
 .details-modal-container{
   position: relative;
   width: clamp(320px, 86vw, 1200px);
