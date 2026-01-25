@@ -6,8 +6,6 @@ ipcRenderer.invoke('get-webview-preload-path').then((preloadPath) => {
 });
 // See the Electron documentation for details on how to use preload scripts:
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
-import { contextBridge, ipcRenderer } from 'electron';
-import { shell } from 'electron';
 
 // Adblock API exposed to renderer
 contextBridge.exposeInMainWorld('adblock', {
@@ -103,10 +101,27 @@ contextBridge.exposeInMainWorld('database', {
   recentWatchesRemove: (id: number, type: 'movie' | 'tv') => ipcRenderer.invoke('recent-watches-remove', id, type),
 });
 
+// Account management API
+contextBridge.exposeInMainWorld('accounts', {
+  list: () => ipcRenderer.invoke('accounts-list'),
+  create: (accountInfo: { id: string; name: string; avatar: string; pin: string; isKid: boolean }, recoveryPin: string) => 
+    ipcRenderer.invoke('accounts-create', accountInfo, recoveryPin),
+  login: (accountId: string, pin: string) => ipcRenderer.invoke('accounts-login', accountId, pin),
+  delete: (accountId: string) => ipcRenderer.invoke('accounts-delete', accountId),
+  current: () => ipcRenderer.invoke('accounts-current'),
+  setCurrent: (accountId: string | null) => ipcRenderer.invoke('accounts-set-current', accountId),
+  logout: () => ipcRenderer.invoke('accounts-logout'),
+  updateProfile: (accountId: string, updates: { name?: string; avatar?: string }) => 
+    ipcRenderer.invoke('accounts-update-profile', accountId, updates),
+  saveAvatar: (accountId: string, imageData: string) => 
+    ipcRenderer.invoke('accounts-save-avatar', accountId, imageData),
+  loadAvatar: (accountId: string) => ipcRenderer.invoke('accounts-load-avatar', accountId),
+  resetPin: (accountId: string, recoveryPin: string, newPin: string) =>
+    ipcRenderer.invoke('accounts-reset-pin', accountId, recoveryPin, newPin),
+});
+
 contextBridge.exposeInMainWorld('openExternal', {
-  url: (u: string) => {
-    try { shell.openExternal(u); } catch (e) { console.error('openExternal failed', e); }
-  }
+  url: (u: string) => ipcRenderer.invoke('open-external-url', u),
 });
 
 contextBridge.exposeInMainWorld('network', {
@@ -179,4 +194,15 @@ contextBridge.exposeInMainWorld('windowControls', {
   close: () => ipcRenderer.invoke('window-close'),
   isMaximized: () => ipcRenderer.invoke('window-is-maximized'),
   openDevtools: () => ipcRenderer.invoke('window-open-devtools'),
+  // Fullscreen APIs
+  fullscreen: () => ipcRenderer.invoke('window-fullscreen'),
+  exitFullscreen: () => ipcRenderer.invoke('window-exit-fullscreen'),
+  toggleFullscreen: () => ipcRenderer.invoke('window-toggle-fullscreen'),
+  isFullscreen: () => ipcRenderer.invoke('window-is-fullscreen'),
+  // Listen for fullscreen state changes
+  onFullscreenChange: (callback: (isFullscreen: boolean) => void) => {
+    const handler = (_event: any, isFullscreen: boolean) => callback(isFullscreen);
+    ipcRenderer.on('fullscreen-changed', handler);
+    return () => ipcRenderer.removeListener('fullscreen-changed', handler);
+  },
 });

@@ -9,15 +9,43 @@ ipcMain.handle('get-webview-preload-path', async () => {
   if (fs.existsSync(srcPath)) return srcPath;
   return '';
 });
-import { app, BrowserWindow, ipcMain, session, BrowserView, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, session, BrowserView, screen, shell } from 'electron';
 import * as http from 'http';
 import * as https from 'https';
 import * as zlib from 'zlib';
-import './main/database'; // Initialize SQLite DB
+import './main/database'; // Initialize SQLite DB (legacy, kept for migration)
 import path from 'node:path';
 import adblock from './adblock';
 import started from 'electron-squirrel-startup';
 import db from './main/database';
+import {
+  getAccounts,
+  createAccount,
+  loginAccount,
+  deleteAccount,
+  getCurrentAccountId,
+  setCurrentAccountId,
+  logout,
+  updateAccountProfile,
+  saveAvatarImage,
+  loadAvatarImage,
+  resetPinWithRecovery,
+  // User-scoped database functions
+  setPersonalization as setUserPersonalization,
+  getPersonalization as getUserPersonalization,
+  favoritesAdd as userFavoritesAdd,
+  favoritesRemove as userFavoritesRemove,
+  favoritesList as userFavoritesList,
+  favoritesIs as userFavoritesIs,
+  favoritesReorder as userFavoritesReorder,
+  watchHistorySet as userWatchHistorySet,
+  watchHistoryGet as userWatchHistoryGet,
+  watchHistoryRemove as userWatchHistoryRemove,
+  watchHistoryList as userWatchHistoryList,
+  recentWatchesGet as userRecentWatchesGet,
+  recentWatchesAdd as userRecentWatchesAdd,
+  recentWatchesRemove as userRecentWatchesRemove,
+} from './main/accountDatabase';
 
 // Recent watches list stored as JSON with separate movie/tv id arrays
 const recentWatchesPath = path.join(app.getPath('userData'), 'recent_watches.json');
@@ -70,24 +98,86 @@ function addRecentWatchId(itemIdRaw: string | number) {
 
 // IPC handlers for database
 ipcMain.handle('set-personalization', async (event, key: string, value: string) => {
-  const stmt = db.prepare('INSERT OR REPLACE INTO personalization (user_id, key, value) VALUES (1, ?, ?)');
-  stmt.run(key, value);
+  try {
+    setUserPersonalization(key, value);
+  } catch (e) {
+    console.error('set-personalization error (no account logged in?)', e);
+  }
 });
 
 ipcMain.handle('get-personalization', async (event, key: string) => {
-  const stmt = db.prepare('SELECT value FROM personalization WHERE user_id = 1 AND key = ?');
-  const row = stmt.get(key);
-  return row ? row.value : null;
+  try {
+    return getUserPersonalization(key);
+  } catch (e) {
+    console.error('get-personalization error (no account logged in?)', e);
+    return null;
+  }
 });
 
-// Favorites handlers
-ipcMain.handle('favorites-add', async (event, itemId: string, itemType: string) => {
-  // Insert favorite and place it at end by default
+// Account management handlers
+ipcMain.handle('accounts-list', async () => {
+  return getAccounts();
+});
+
+ipcMain.handle('accounts-create', async (event, accountInfo: { id: string; name: string; avatar: string; pin: string; isKid: boolean }, recoveryPin: string) => {
+  return createAccount(accountInfo, recoveryPin);
+});
+
+ipcMain.handle('accounts-login', async (event, accountId: string, pin: string) => {
+  return loginAccount(accountId, pin);
+});
+
+ipcMain.handle('accounts-delete', async (event, accountId: string) => {
+  return deleteAccount(accountId);
+});
+
+ipcMain.handle('accounts-current', async () => {
+  return getCurrentAccountId();
+});
+
+ipcMain.handle('accounts-set-current', async (event, accountId: string | null) => {
+  setCurrentAccountId(accountId);
+  return true;
+});
+
+ipcMain.handle('accounts-logout', async () => {
+  logout();
+  return true;
+});
+
+ipcMain.handle('accounts-update-profile', async (event, accountId: string, updates: { name?: string; avatar?: string }) => {
+  return updateAccountProfile(accountId, updates);
+});
+
+ipcMain.handle('accounts-save-avatar', async (event, accountId: string, imageData: string) => {
+  return saveAvatarImage(accountId, imageData);
+});
+
+ipcMain.handle('accounts-load-avatar', async (event, accountId: string) => {
+  return loadAvatarImage(accountId);
+});
+
+ipcMain.handle('accounts-reset-pin', async (event, accountId: string, recoveryPin: string, newPin: string) => {
+  return resetPinWithRecovery(accountId, recoveryPin, newPin);
+});
+
+// Open external URL in default browser
+ipcMain.handle('open-external-url', async (event, url: string) => {
+  console.log('open-external-url called with:', url);
   try {
-    const maxRow = db.prepare('SELECT COALESCE(MAX(sort_order), 0) AS maxOrder FROM favorites WHERE user_id = 1').get();
-    const nextOrder = (maxRow && maxRow.maxOrder) ? (Number(maxRow.maxOrder) + 1) : 1;
-    const stmt = db.prepare('INSERT OR IGNORE INTO favorites (user_id, item_id, item_type, added_at, sort_order) VALUES (1, ?, ?, CURRENT_TIMESTAMP, ?)');
-    stmt.run(itemId, itemType, nextOrder);
+    await shell.openExternal(url);
+    console.log('shell.openExternal succeeded for:', url);
+    return true;
+  } catch (e) {
+    console.error('open-external-url error', e);
+    return false;
+  }
+});
+
+// Favorites handlers (user-scoped)
+ipcMain.handle('favorites-add', async (event, itemId: string, itemType: string) => {
+  try {
+    userFavoritesAdd(itemId, itemType);
   } catch (e) {
     console.error('favorites-add error', e);
   }
@@ -95,91 +185,114 @@ ipcMain.handle('favorites-add', async (event, itemId: string, itemType: string) 
 });
 
 ipcMain.handle('favorites-remove', async (event, itemId: string, itemType: string) => {
-  const stmt = db.prepare('DELETE FROM favorites WHERE user_id = 1 AND item_id = ? AND item_type = ?');
-  stmt.run(itemId, itemType);
+  try {
+    userFavoritesRemove(itemId, itemType);
+  } catch (e) {
+    console.error('favorites-remove error', e);
+  }
   return true;
 });
 
 ipcMain.handle('favorites-list', async (event) => {
-  const stmt = db.prepare('SELECT id, item_id, item_type, sort_order FROM favorites WHERE user_id = 1 ORDER BY sort_order ASC');
-  const rows = stmt.all();
-  return rows;
+  try {
+    return userFavoritesList();
+  } catch (e) {
+    console.error('favorites-list error', e);
+    return [];
+  }
 });
 
 ipcMain.handle('favorites-is', async (event, itemId: string, itemType: string) => {
-  const stmt = db.prepare('SELECT 1 FROM favorites WHERE user_id = 1 AND item_id = ? AND item_type = ?');
-  const row = stmt.get(itemId, itemType);
-  return !!row;
+  try {
+    return userFavoritesIs(itemId, itemType);
+  } catch (e) {
+    console.error('favorites-is error', e);
+    return false;
+  }
 });
 
 ipcMain.handle('favorites-swap', async (event, idA: number, idB: number) => {
-  // swap sort_order between two favorites identified by id
-  const a = db.prepare('SELECT id, sort_order FROM favorites WHERE id = ?').get(idA);
-  const b = db.prepare('SELECT id, sort_order FROM favorites WHERE id = ?').get(idB);
-  if (!a || !b) return false;
-  const update = db.prepare('UPDATE favorites SET sort_order = ? WHERE id = ?');
-  const t = db.transaction(() => {
-    update.run(b.sort_order, a.id);
-    update.run(a.sort_order, b.id);
-  });
-  t();
-  return true;
+  // Swap sort_order between two favorites - get the list and swap
+  try {
+    const favorites = userFavoritesList();
+    const a = favorites.find((f: any) => f.id === idA);
+    const b = favorites.find((f: any) => f.id === idB);
+    if (!a || !b) return false;
+    userFavoritesReorder(idA, b.sort_order);
+    userFavoritesReorder(idB, a.sort_order);
+    return true;
+  } catch (e) {
+    console.error('favorites-swap error', e);
+    return false;
+  }
 });
 
 ipcMain.handle('favorites-set-order', async (event, id: number, order: number) => {
-  const stmt = db.prepare('UPDATE favorites SET sort_order = ? WHERE id = ?');
-  stmt.run(order, id);
+  try {
+    userFavoritesReorder(id, order);
+  } catch (e) {
+    console.error('favorites-set-order error', e);
+  }
   return true;
 });
 
-// Watch history handlers
+// Watch history handlers (user-scoped)
 ipcMain.handle('watch-history-set', async (event, itemId: string, position: number) => {
-  const insert = db.prepare('INSERT INTO watch_history (user_id, item_id, watched_at, position) VALUES (1, ?, CURRENT_TIMESTAMP, ?)');
-  const update = db.prepare('UPDATE watch_history SET position = ?, watched_at = CURRENT_TIMESTAMP WHERE user_id = 1 AND item_id = ?');
-  const exists = db.prepare('SELECT 1 FROM watch_history WHERE user_id = 1 AND item_id = ?').get(itemId);
-  if (exists) {
-    update.run(position, itemId);
-  } else {
-    insert.run(itemId, position);
+  try {
+    userWatchHistorySet(itemId, position);
+    try { userRecentWatchesAdd(itemId); } catch (e) { /* ignore */ }
+  } catch (e) {
+    console.error('watch-history-set error', e);
   }
-  try { addRecentWatchId(itemId); } catch (e) { /* ignore */ }
   return true;
 });
 
 ipcMain.handle('watch-history-get', async (event, itemId: string) => {
-  const stmt = db.prepare('SELECT position, watched_at FROM watch_history WHERE user_id = 1 AND item_id = ?');
-  const row = stmt.get(itemId);
-  return row || null;
+  try {
+    return userWatchHistoryGet(itemId);
+  } catch (e) {
+    console.error('watch-history-get error', e);
+    return null;
+  }
 });
 
 ipcMain.handle('watch-history-list', async (event) => {
-  const stmt = db.prepare('SELECT item_id, position, watched_at FROM watch_history WHERE user_id = 1 ORDER BY watched_at DESC');
-  return stmt.all();
+  try {
+    return userWatchHistoryList();
+  } catch (e) {
+    console.error('watch-history-list error', e);
+    return [];
+  }
 });
 
-// Recent watches JSON list handlers
-ipcMain.handle('recent-watches-get', async () => loadRecentWatches());
-ipcMain.handle('recent-watches-set', async (event, list: number[] | { movie?: number[]; tv?: number[] }) => {
-  if (Array.isArray(list)) {
-    const cleaned = list.map((v) => Number(v)).filter((v) => Number.isFinite(v));
-    saveRecentWatches({ movie: cleaned, tv: [] });
-  } else if (list && typeof list === 'object') {
-    const movie = Array.isArray(list.movie) ? list.movie.map((v) => Number(v)).filter((v) => Number.isFinite(v)) : [];
-    const tv = Array.isArray(list.tv) ? list.tv.map((v) => Number(v)).filter((v) => Number.isFinite(v)) : [];
-    saveRecentWatches({ movie, tv });
+// Recent watches handlers (user-scoped)
+ipcMain.handle('recent-watches-get', async () => {
+  try {
+    return userRecentWatchesGet();
+  } catch (e) {
+    console.error('recent-watches-get error', e);
+    return { movie: [], tv: [] };
   }
+});
+ipcMain.handle('recent-watches-set', async (event, list: number[] | { movie?: number[]; tv?: number[] }) => {
+  // Note: For user-scoped, we just use recent-watches-add; this is a legacy handler
+  // The user database doesn't support bulk set, so this is a no-op for now
+  console.warn('recent-watches-set is deprecated in multi-account mode');
   return true;
 });
 ipcMain.handle('recent-watches-add', async (event, itemId: string | number) => {
-  addRecentWatchId(itemId);
+  try {
+    userRecentWatchesAdd(String(itemId));
+  } catch (e) {
+    console.error('recent-watches-add error', e);
+  }
   return true;
 });
 
 // Delete a watch history entry by item_id (e.g., "movie:123" or "tv:456")
 ipcMain.handle('watch-history-delete', async (event, itemId: string) => {
   try {
-    const stmt = db.prepare('DELETE FROM watch_history WHERE user_id = 1 AND item_id = ?');
-    stmt.run(itemId);
+    userWatchHistoryRemove(itemId);
     return true;
   } catch (e) {
     console.error('watch-history-delete failed', e);
@@ -187,16 +300,10 @@ ipcMain.handle('watch-history-delete', async (event, itemId: string) => {
   }
 });
 
-// Remove a specific item from recent watches by id and type
+// Remove a specific item from recent watches by id and type (user-scoped)
 ipcMain.handle('recent-watches-remove', async (event, id: number, type: 'movie' | 'tv') => {
   try {
-    const data = loadRecentWatches();
-    if (type === 'tv') {
-      data.tv = data.tv.filter((v) => v !== id);
-    } else {
-      data.movie = data.movie.filter((v) => v !== id);
-    }
-    saveRecentWatches(data);
+    userRecentWatchesRemove(id, type);
     return true;
   } catch (e) {
     console.error('recent-watches-remove failed', e);
@@ -231,6 +338,35 @@ ipcMain.handle('window-is-maximized', async (event) => {
   return win ? win.isMaximized() : false;
 });
 
+// Fullscreen handlers for true fullscreen mode (hides taskbar)
+ipcMain.handle('window-fullscreen', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) {
+    win.setFullScreen(true);
+  }
+});
+
+ipcMain.handle('window-exit-fullscreen', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) {
+    win.setFullScreen(false);
+  }
+});
+
+ipcMain.handle('window-toggle-fullscreen', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) {
+    win.setFullScreen(!win.isFullScreen());
+    return win.isFullScreen();
+  }
+  return false;
+});
+
+ipcMain.handle('window-is-fullscreen', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  return win ? win.isFullScreen() : false;
+});
+
 ipcMain.handle('window-open-devtools', async (event) => {
   try {
     const win = BrowserWindow.fromWebContents(event.sender);
@@ -255,6 +391,7 @@ const createWindow = () => {
     minWidth: 768,
     minHeight: 600,
     frame: false, // Remove default title bar
+    show: false, // Don't show until ready to prevent flash
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       webviewTag: true,
@@ -288,6 +425,14 @@ const createWindow = () => {
     }
   });
 
+  // Show window in fullscreen when ready
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.setFullScreen(true);
+    mainWindow.show();
+    // Notify renderer of fullscreen state
+    mainWindow.webContents.send('fullscreen-changed', true);
+  });
+
   // and load the index.html of the app.
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
@@ -303,10 +448,29 @@ const createWindow = () => {
     mainWindow.webContents.on('devtools-opened', () => {
       mainWindow.webContents.closeDevTools();
     });
+  }
 
-    // Prevent DevTools keyboard shortcuts
-    mainWindow.webContents.on('before-input-event', (event, input) => {
-      // Block common DevTools shortcuts
+  // Handle keyboard shortcuts
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    // F11 to toggle fullscreen
+    if (input.key === 'F11' && input.type === 'keyDown') {
+      mainWindow.setFullScreen(!mainWindow.isFullScreen());
+      // Notify renderer of fullscreen state change
+      mainWindow.webContents.send('fullscreen-changed', mainWindow.isFullScreen());
+      event.preventDefault();
+      return;
+    }
+    
+    // Escape to exit fullscreen
+    if (input.key === 'Escape' && input.type === 'keyDown' && mainWindow.isFullScreen()) {
+      mainWindow.setFullScreen(false);
+      mainWindow.webContents.send('fullscreen-changed', false);
+      event.preventDefault();
+      return;
+    }
+    
+    // Block DevTools shortcuts unless allowed
+    if (!allowDevtools) {
       if (
         (input.key === 'F12') ||
         (input.control && input.shift && input.key.toLowerCase() === 'i') ||
@@ -316,8 +480,16 @@ const createWindow = () => {
       ) {
         event.preventDefault();
       }
-    });
-  }
+    }
+  });
+
+  // Notify renderer when fullscreen state changes (e.g., via native controls)
+  mainWindow.on('enter-full-screen', () => {
+    mainWindow.webContents.send('fullscreen-changed', true);
+  });
+  mainWindow.on('leave-full-screen', () => {
+    mainWindow.webContents.send('fullscreen-changed', false);
+  });
 };
 
 // This method will be called when Electron has finished

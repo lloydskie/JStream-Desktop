@@ -16,10 +16,12 @@ import TVPage from './TVPage';
 import AnimePage from './AnimePage';
 import CollectionsPage from './CollectionsPage';
 import PersonPage from './PersonPage';
+import NewPopularPage from './NewPopularPage';
 import ContinueWatching from './components/ContinueWatching';
 import TopSearches from './components/TopSearches';
 import HeroBanner from './components/HeroBanner';
 import CustomSelect from './components/CustomSelect';
+import WelcomeScreen from './WelcomeScreen';
 import { useState, useEffect } from 'react';
 // search UI removed from header per request
 import { fetchTMDB } from '../utils/tmdbClient';
@@ -78,6 +80,145 @@ try {
 } catch (e) { /* ignore */ }
 
 export default function App() {
+  // Account state - show welcome screen if no account is logged in
+  const [currentAccountId, setCurrentAccountId] = useState<string | null | undefined>(undefined); // undefined = loading, null = no account
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
+  const [currentAccountAvatar, setCurrentAccountAvatar] = useState<{ emoji?: string; image?: string } | null>(null);
+  
+  // Fullscreen state
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showFullscreenBar, setShowFullscreenBar] = useState(false);
+  
+  // Check fullscreen state on mount and listen for changes
+  useEffect(() => {
+    (async () => {
+      try {
+        const fullscreen = await (window as any).windowControls?.isFullscreen();
+        setIsFullscreen(fullscreen || false);
+      } catch (e) {}
+    })();
+    
+    // Listen for fullscreen changes from main process
+    const cleanup = (window as any).windowControls?.onFullscreenChange?.((fullscreen: boolean) => {
+      setIsFullscreen(fullscreen);
+      if (!fullscreen) {
+        setShowFullscreenBar(false);
+      }
+    });
+    
+    return () => cleanup?.();
+  }, []);
+  
+  // Handle mouse movement at top of screen to show fullscreen exit bar
+  useEffect(() => {
+    if (!isFullscreen) return;
+    
+    let hideTimeout: ReturnType<typeof setTimeout>;
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      if (e.clientY <= 10) {
+        setShowFullscreenBar(true);
+        clearTimeout(hideTimeout);
+      } else if (e.clientY > 50 && showFullscreenBar) {
+        hideTimeout = setTimeout(() => setShowFullscreenBar(false), 500);
+      }
+    };
+    
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      clearTimeout(hideTimeout);
+    };
+  }, [isFullscreen, showFullscreenBar]);
+  
+  // Add/remove fullscreen class on body for CSS styling
+  useEffect(() => {
+    if (isFullscreen) {
+      document.body.classList.add('app-fullscreen');
+    } else {
+      document.body.classList.remove('app-fullscreen');
+    }
+    return () => {
+      document.body.classList.remove('app-fullscreen');
+    };
+  }, [isFullscreen]);
+  
+  // Add/remove show-fullscreen-bar class when bar is visible (hides navbar)
+  useEffect(() => {
+    if (showFullscreenBar) {
+      document.body.classList.add('show-fullscreen-bar');
+    } else {
+      document.body.classList.remove('show-fullscreen-bar');
+    }
+    return () => {
+      document.body.classList.remove('show-fullscreen-bar');
+    };
+  }, [showFullscreenBar]);
+  
+  // Check for current account on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const accountId = await (window as any).accounts.current();
+        setCurrentAccountId(accountId);
+        if (accountId) {
+          // Load avatar info
+          const accounts = await (window as any).accounts.list();
+          const account = accounts?.find((a: any) => a.id === accountId);
+          const avatarImage = await (window as any).accounts.loadAvatar(accountId);
+          setCurrentAccountAvatar({
+            emoji: account?.avatar,
+            image: avatarImage || undefined
+          });
+        }
+      } catch (e) {
+        console.error('Failed to get current account:', e);
+        setCurrentAccountId(null);
+      }
+      setAccountsLoaded(true);
+    })();
+  }, []);
+
+  // Handler when account is selected from WelcomeScreen
+  const handleAccountSelected = async (accountId: string) => {
+    setCurrentAccountId(accountId);
+    // Load avatar for selected account
+    try {
+      const accounts = await (window as any).accounts.list();
+      const account = accounts?.find((a: any) => a.id === accountId);
+      const avatarImage = await (window as any).accounts.loadAvatar(accountId);
+      setCurrentAccountAvatar({
+        emoji: account?.avatar,
+        image: avatarImage || undefined
+      });
+    } catch (e) {
+      console.error('Failed to load avatar:', e);
+    }
+  };
+
+  // Handler when a new account is created
+  const handleAccountCreated = async (account: { id: string; name: string; avatar: string; avatarImage?: string }) => {
+    setCurrentAccountId(account.id);
+    // Use the avatar image passed directly if available, otherwise load it
+    if (account.avatarImage) {
+      setCurrentAccountAvatar({
+        emoji: account.avatar,
+        image: account.avatarImage
+      });
+    } else {
+      try {
+        const avatarImage = await (window as any).accounts.loadAvatar(account.id);
+        setCurrentAccountAvatar({
+          emoji: account.avatar,
+          image: avatarImage || undefined
+        });
+      } catch (e) {
+        console.error('Failed to load avatar:', e);
+        setCurrentAccountAvatar({ emoji: account.avatar });
+      }
+    }
+  };
+
   // Log the defaultSystem so we can verify it's present in the renderer bundle
   try { console.debug('Chakra defaultSystem:', defaultSystem); } catch (e) { console.debug('Chakra defaultSystem: <failed to read>'); }
   // Use default Chakra theme by leaving ChakraProvider without an explicit theme
@@ -104,6 +245,27 @@ export default function App() {
     const detach = attachGlobalScrollCapture();
     return () => detach && detach();
   }, []);
+
+  // Ensure the app opens on Home on first run after account sign-in.
+  // Some environments may have a stale saved tab; treat the very first
+  // app start as an opportunity to show Home and then remember we've
+  // performed the initial normalization so we don't override user
+  // preference on subsequent runs.
+  React.useEffect(() => {
+    try {
+      if (!accountsLoaded) return;
+      // Only run once ever (per-machine) — use a separate flag
+      const seenFlag = localStorage.getItem('jstream_seenInitialTab');
+      if (!seenFlag) {
+        // Mark we've normalized the initial tab
+        localStorage.setItem('jstream_seenInitialTab', '1');
+        // If current account is set, ensure we show Home
+        if (currentAccountId) {
+          setActiveIndex(0);
+        }
+      }
+    } catch (e) { /* ignore */ }
+  }, [accountsLoaded, currentAccountId]);
   const [activeIndex, setActiveIndex] = useState<number>(() => {
     // Restore active tab from localStorage on initial load
     try {
@@ -370,6 +532,12 @@ export default function App() {
     try { (window as any).database.recentWatchesAdd(historyKey); } catch(e) { /* ignore */ }
   }
 
+  // Close player modal and reload page to reset state
+  function handleClosePlayerModal() {
+    setPlayerModalOpen(false);
+    window.location.reload();
+  }
+
   function handleBackFromPlayer() {
     setActiveIndex(0); // back to Home
   }
@@ -407,37 +575,181 @@ export default function App() {
     return () => window.removeEventListener('keydown', keyHandler);
   }, [selectedTmdbId]);
 
-                  return (
-            <>
-            {/* Custom title bar for frameless window */}
-            <div className="title-bar">
-              <div className="title-bar-content">
-                <span className="title-text">JStream</span>
-                <div className="title-bar-controls">
-                  <button 
-                    className="title-bar-button minimize" 
-                    onClick={() => (window as any).windowControls.minimize()}
-                    title="Minimize"
-                  >
-                    ─
-                  </button>
-                  <button 
-                    className="title-bar-button maximize" 
-                    onClick={() => (window as any).windowControls.maximize()}
-                    title="Maximize"
-                  >
-                    □
-                  </button>
-                  <button 
-                    className="title-bar-button close" 
-                    onClick={() => (window as any).windowControls.close()}
-                    title="Close"
-                  >
-                    ✕
-                  </button>
-                </div>
+  // Show loading screen while checking for account
+  if (!accountsLoaded) {
+    return (
+      <div style={{
+        position: 'fixed',
+        inset: 0,
+        background: '#141414',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: '#fff',
+        fontFamily: 'system-ui, sans-serif',
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🎬</div>
+          <div>Loading...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show welcome/onboarding screen if no account is logged in
+  if (currentAccountId === null) {
+    return (
+      <>
+        {/* Fullscreen exit bar - rendered via portal to body for highest z-index */}
+        {isFullscreen && showFullscreenBar && createPortal(
+          <div className="fullscreen-exit-bar" style={{
+            height: '60px',
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.95), rgba(0,0,0,0.8), transparent)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0 24px',
+            animation: 'slideDown 0.2s ease-out',
+            gap: '24px',
+          }}>
+            <span style={{ color: '#9ca3af', fontSize: '14px' }}>Press F11 or Escape to exit fullscreen</span>
+            <button
+              onClick={() => (window as any).windowControls.exitFullscreen()}
+              style={{
+                background: '#dc2626',
+                border: 'none',
+                borderRadius: '6px',
+                color: 'white',
+                padding: '10px 20px',
+                cursor: 'pointer',
+                fontSize: '15px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 12px rgba(220, 38, 38, 0.4)',
+                transition: 'transform 0.15s, box-shadow 0.15s',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.05)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(220, 38, 38, 0.5)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(220, 38, 38, 0.4)'; }}
+              title="Exit Fullscreen"
+            >
+              ✕ Exit Fullscreen
+            </button>
+          </div>,
+          document.body
+        )}
+        {/* Custom title bar for frameless window - hidden in fullscreen */}
+        {!isFullscreen && (
+          <div className="title-bar">
+            <div className="title-bar-content">
+              <span className="title-text">JStream</span>
+              <div className="title-bar-controls">
+                <button 
+                  className="title-bar-button minimize" 
+                  onClick={() => (window as any).windowControls.minimize()}
+                  title="Minimize"
+                >
+                  ─
+                </button>
+                <button 
+                  className="title-bar-button maximize" 
+                  onClick={() => (window as any).windowControls.fullscreen()}
+                  title="Fullscreen (F11)"
+                >
+                  ⛶
+                </button>
+                <button 
+                  className="title-bar-button close" 
+                  onClick={() => (window as any).windowControls.close()}
+                  title="Close"
+                >
+                  ✕
+                </button>
               </div>
             </div>
+          </div>
+        )}
+        <WelcomeScreen
+          onAccountSelected={handleAccountSelected}
+          onAccountCreated={handleAccountCreated}
+        />
+      </>
+    );
+  }
+
+                  return (
+            <>
+            {/* Fullscreen exit bar - rendered via portal to body for highest z-index */}
+            {isFullscreen && showFullscreenBar && createPortal(
+              <div className="fullscreen-exit-bar" style={{
+                height: '60px',
+                background: 'linear-gradient(to bottom, rgba(0,0,0,0.95), rgba(0,0,0,0.8), transparent)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '0 24px',
+                animation: 'slideDown 0.2s ease-out',
+                gap: '24px',
+              }}>
+                <span style={{ color: '#9ca3af', fontSize: '14px' }}>Press F11 or Escape to exit fullscreen</span>
+                <button
+                  onClick={() => (window as any).windowControls.exitFullscreen()}
+                  style={{
+                    background: '#dc2626',
+                    border: 'none',
+                    borderRadius: '6px',
+                    color: 'white',
+                    padding: '10px 20px',
+                    cursor: 'pointer',
+                    fontSize: '15px',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 12px rgba(220, 38, 38, 0.4)',
+                    transition: 'transform 0.15s, box-shadow 0.15s',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.05)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(220, 38, 38, 0.5)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(220, 38, 38, 0.4)'; }}
+                  title="Exit Fullscreen"
+                >
+                  ✕ Exit Fullscreen
+                </button>
+              </div>,
+              document.body
+            )}
+            {/* Custom title bar for frameless window - hidden in fullscreen */}
+            {!isFullscreen && (
+              <div className="title-bar">
+                <div className="title-bar-content">
+                  <span className="title-text">JStream</span>
+                  <div className="title-bar-controls">
+                    <button 
+                      className="title-bar-button minimize" 
+                      onClick={() => (window as any).windowControls.minimize()}
+                      title="Minimize"
+                    >
+                      ─
+                    </button>
+                    <button 
+                      className="title-bar-button maximize" 
+                      onClick={() => (window as any).windowControls.fullscreen()}
+                      title="Fullscreen (F11)"
+                    >
+                      ⛶
+                    </button>
+                    <button 
+                      className="title-bar-button close" 
+                      onClick={() => (window as any).windowControls.close()}
+                      title="Close"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             <ChakraProvider value={defaultSystem}>
               <ErrorBoundary>
                 {featuredMovie && <HeroBanner movie={featuredMovie} onPlay={handlePlayMovie} onMore={handleSelectMovie} fullBleed isModalOpen={playerModalOpen || activeIndex === 10} isVisible={activeIndex === 0} />}
@@ -448,7 +760,7 @@ export default function App() {
                             const headerNode = typeof document !== 'undefined' ? document.getElementById('header-root') : null;
                             const headerJsx = (
                               <header className="app-header">
-                                <div className="brand"><div className="logo">JStream</div></div>
+                                <div className="brand"><img src="https://quijano.pages.dev/store/files/assets/jstreamv2/original-logo-backup.png" alt="JStream" className="logo-img" style={{ height: '36px', width: 'auto' }} /></div>
                                 <TabList mb="1em">
                                   <Tab>Home</Tab>
                                   <Tab>Shows</Tab>
@@ -505,7 +817,13 @@ export default function App() {
                                   )}
 
                                   <button className="profile-btn button ghost" title="Profile" onClick={() => setActiveIndex(7)}>
-                                    <img src="/assets/profile-placeholder.svg" alt="Profile" style={{width:28,height:28,objectFit:'cover',borderRadius:6}} />
+                                    {currentAccountAvatar?.image ? (
+                                      <img src={currentAccountAvatar.image} alt="Profile" style={{width:28,height:28,objectFit:'cover',borderRadius:'50%'}} />
+                                    ) : currentAccountAvatar?.emoji ? (
+                                      <span style={{fontSize:20,display:'block',lineHeight:'28px'}}>{currentAccountAvatar.emoji}</span>
+                                    ) : (
+                                      <img src="/assets/profile-placeholder.svg" alt="Profile" style={{width:28,height:28,objectFit:'cover',borderRadius:6}} />
+                                    )}
                                   </button>
                                   <button aria-label="Open menu" className="hamburger button ghost" onClick={() => setIsMobileMenuOpen(true)} style={{marginLeft:8}}>☰</button>
                                 </div>
@@ -559,7 +877,7 @@ export default function App() {
                 <TabPanel sx={{padding: 0}}><HomeGrid onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedTmdbId={selectedTmdbId} selectedGenre={selectedGenre} isModalOpen={playerModalOpen} onSetFeatured={setFeaturedMovie} /></TabPanel>
                 <TabPanel sx={{padding: 0}}><TVPage genres={tvGenres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
                 <TabPanel sx={{padding: 0}}><MoviesPage genres={genres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
-                <TabPanel sx={{padding: 0}}><div>New & Popular content here</div></TabPanel>
+                <TabPanel sx={{padding: 0}}><NewPopularPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
                 <TabPanel sx={{padding: 0}}><MyListPage onPlay={handlePlayMovie} onSelect={handleSelectMovie} /></TabPanel>
                 <TabPanel sx={{padding: 0}}><BrowseLanguagesPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
                 <TabPanel sx={{padding: 0}}>
@@ -580,7 +898,7 @@ export default function App() {
                     }}
                   />
                 </TabPanel>
-                <TabPanel sx={{padding: 0}}><ProfilePage /></TabPanel>
+                <TabPanel sx={{padding: 0}}><ProfilePage onSignOut={() => { setCurrentAccountId(null); setCurrentAccountAvatar(null); }} /></TabPanel>
                 <TabPanel sx={{padding: 0}}><CollectionsPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedCollectionId={selectedCollectionId} /></TabPanel>
                 {/* Details page converted to modal — removed page panel */}
                 <TabPanel><VideoPlayerPage playerType={playerType} params={playerParams} onBack={handleBackFromPlayer} player={selectedPlayer} /></TabPanel>
@@ -590,9 +908,9 @@ export default function App() {
           {/* Modal removed — Play now opens the Player tab where `VideoPlayerPage` renders the embedded player */}
           </Tabs>
           {playerModalOpen && (
-            <div className="player-modal-overlay" onClick={() => setPlayerModalOpen(false)}>
+            <div className="player-modal-overlay" onClick={handleClosePlayerModal}>
               <div className={`player-modal-box movie-mode`} onClick={(e) => e.stopPropagation()}>
-                <button aria-label="Close player" onClick={() => setPlayerModalOpen(false)} className="player-modal-close">✕</button>
+                <button aria-label="Close player" onClick={handleClosePlayerModal} className="player-modal-close">✕</button>
                 {/* Main content: VideoPlayer on left, season/episode panel on right for TV */}
                 <div className="player-modal-content">
                     <div className="player-modal-left">

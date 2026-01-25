@@ -61,7 +61,9 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode, onE
   const PREVIEW_OPEN_DELAY = 250;
 
   const titleLower = typeof title === 'string' ? title.toLowerCase() : '';
-  const previewable = backdropMode || titleLower.includes('top 10') || titleLower.includes('popular') || titleLower.includes('because you watched') || titleLower.includes('top rated') || titleLower.includes('continue watching');
+  const previewable = backdropMode || titleLower.includes('top 10') || titleLower.includes('popular') || titleLower.includes('because you watched') || titleLower.includes('top rated') || titleLower.includes('continue watching') || titleLower.includes('new on') || titleLower.includes('coming this week') || titleLower.includes('coming next week') || titleLower.includes('worth the wait');
+  // Hide movie titles for New & Popular page rows (they use hover modals instead)
+  const hidePosterTitles = titleLower.includes('top 10') || titleLower.includes('new on') || titleLower.includes('coming this week') || titleLower.includes('coming next week') || titleLower.includes('worth the wait');
 
   function pauseHero() {
     try {
@@ -523,7 +525,7 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode, onE
                 >
                   <div className="movie-overlay">
                     <img className="movie-poster" src={m.poster_path ? `https://image.tmdb.org/t/p/w300${m.poster_path}` : undefined} alt={m.title} />
-                    <div className="play-overlay" onClick={(ev)=>{ ev.stopPropagation(); const inferred: 'movie'|'tv' = (m._media === 'tv' || m.media_type === 'tv') ? 'tv' : 'movie'; if (onPlay) onPlay(m.id, inferred); }}><div className="play-circle"><div className="play-triangle"/></div></div>
+                    {!hidePosterTitles && <div className="play-overlay" onClick={(ev)=>{ ev.stopPropagation(); const inferred: 'movie'|'tv' = (m._media === 'tv' || m.media_type === 'tv') ? 'tv' : 'movie'; if (onPlay) onPlay(m.id, inferred); }}><div className="play-circle"><div className="play-triangle"/></div></div>}
                   </div>
                   {/* Add to list toggle (replaces previous favorites heart) */}
                   <button
@@ -544,7 +546,7 @@ export default function Row({ title, movies, onSelect, onPlay, backdropMode, onE
                       }
                     }}
                   />
-                  <div className="movie-title">{m.title}</div>
+                  {!hidePosterTitles && <div className="movie-title">{m.title}</div>}
                 </div>
               )}
               {/* Mini modal for Top10 rows: appears on hover, minimal actions like ContinueWatching */}
