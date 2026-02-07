@@ -1,70 +1,83 @@
 ## Copilot / AI agent instructions for JStream-Desktop
 
-Short, hands-on notes for AI coding agents about the Electron + Vite app so you can be productive quickly.
+Hands-on notes for AI coding agents about this Electron + Vite streaming app.
 
-### High-level architecture
-- **Main process**: `jstream-desktop/src/main.ts` — app lifecycle, IPC handlers, adblock, SQLite DB, TMDB proxy, BrowserView player management.
-- **Preload**: `jstream-desktop/src/preload.ts` — single canonical surface exposed via `contextBridge` (renderer must use this; do NOT access `ipcRenderer` directly in renderer code).
-- **Renderer**: React + Chakra UI in `jstream-desktop/src/renderer/` (entry: `App.tsx`). Vite builds renderer bundles and `electron-forge` runs the app.
-- **Database**: SQLite file `jstream.db` at Electron `app.getPath('userData')` with tables for favorites, watch_history, personalization. Migrations use `ALTER TABLE` in try/catch (idempotent).
-- **External APIs**: TMDB proxy in main process provides caching, rate-limiting, and keeps API keys secure. Player URLs built from Remote Config (Firebase) with feature flags.
-- **Adblock**: Filters in `adblock/` directory, matching logic in `src/adblock.ts`, cosmetic selectors injected via preload on DOMContentLoaded.
-- **Player system**: BrowserView overlays for embedded players; fullscreen requests trigger separate windows. Multiple providers (Videasy, Vidfast, Vidsrc, Vidlink) with URL builders in `VideoPlayer.tsx`.
+### Architecture overview
+- **Main process** (`jstream-desktop/src/main.ts`, ~1300 lines): app lifecycle, all IPC handlers, TMDB proxy with caching/rate-limiting, BrowserView player management, adblock engine, window controls. This is the single largest file — most new backend features go here.
+- **Preload** (`jstream-desktop/src/preload.ts`): the **only** bridge between main and renderer. Exposes namespaced APIs via `contextBridge.exposeInMainWorld(...)`. Renderer code must **never** import `ipcRenderer` directly.
+- **Renderer**: React 19 + Chakra UI v3 in `jstream-desktop/src/renderer/` (entry: `App.tsx`). Vite builds renderer bundles; `electron-forge` runs the app.
+- **Database**: **JSON files** (not SQLite). Legacy `jstream.json` in `src/main/database.ts` provides a `db.prepare()` shim. Actual per-user data lives in `src/main/accountDatabase.ts` — see below.
+- **Multi-account system** (`src/main/accountDatabase.ts`): master `accounts.json` + per-user `user_data/<accountId>/data.json` files containing favorites, watch_history, personalization, recent_watches. PIN auth with SHA-256 hashing and recovery PINs.
+- **Kids content filter** (`src/utils/kidsFilter.ts`): client-side filtering activated per-profile. Checks TMDB `adult` flag, blocked-words list, TMDB Daily Adult ID Exports (downloaded in main process), and forces API-level cert/genre restrictions (`PG`/`TV-PG` max).
+- **TMDB proxy**: main process handles all TMDB API calls — in-memory cache (10 min TTL), per-webContents rate-limiting (120 req/min), guessing detection (>120 distinct IDs/min blocked).
+- **Player system**: BrowserView overlays for embedded players; HTML fullscreen triggers separate windows. Multiple providers in `VideoPlayer.tsx` (`buildProviderUrl()` switch): Aether (Videasy), Boreal (Vidfast), Cygnus (Vidsrc), Draco (Vidlink).
+- **Adblock**: filter lists in `adblock/`, matching in `src/adblock.ts`, `session.webRequest.onBeforeRequest` blocking + cosmetic CSS injection via preload MutationObserver.
 
-### Quick developer workflows
-- **Dev** (repo root): `npm run dev` → delegates to `jstream-desktop` and runs `electron-forge start` (Vite dev server + Electron).
-- **Tests**: `npm run test` (runs `vitest` in `jstream-desktop`). Renderer unit tests live under `src/renderer/__tests__`.
-- **Storybook**: `cd jstream-desktop && npm run storybook` (default port 6006).
-- **Package/release**: `cd jstream-desktop && npx electron-forge make` (see `forge.config.ts`).
+### Preload API surface (renderer globals)
+The renderer accesses main-process features through these `window.*` namespaces — mock these in tests:
+- `window.database` — favorites, watch history, personalization, recent watches
+- `window.accounts` — list, create, login, logout, delete, updateProfile, saveAvatar, loadAvatar, resetPin
+- `window.tmdb` — `request(endpoint, params)` (main-process TMDB proxy)
+- `window.tmdbApi` — `fetchDetails(id, media_type)`, `imageUrl(path, size)`
+- `window.tmdbExports` — `fetchCollectionsFeed(opts)` (daily export download)
+- `window.kidsFilter` — `isKid()`, `getAdultIds()`
+- `window.playerView` — `create(url, opts)`, `destroy()`, `setBounds(bounds)`
+- `window.playerViewEvents` — `onFullscreenChange(cb)`, `onFullscreenRequest(cb)`
+- `window.windowControls` — minimize, maximize, close, fullscreen, toggleFullscreen, isFullscreen, openDevtools, onFullscreenChange
+- `window.adblock` — setEnabled, addRule, stats, reloadLists, etc.
+- `window.openExternal` — `url(u)`
+- `window.network` — `checkUrlHeaders(u)`
 
-### Important runtime & config locations
-- **TMDB API key / player config**: `jstream-desktop/src/utils/remoteConfig.ts` (`getPlayerConfig()`); main process also checks `TMDB_API_KEY` env as fallback.
-- **Local DB**: SQLite at `app.getPath('userData')/jstream.db` (schema in `src/main/database.ts`).
-- **Adblock lists**: `adblock/` (e.g., `filters.txt`, `easylist.txt`) and `src/adblock.ts`.
-- **Player URLs**: `buildVideasyUrl()` in `src/utils/remoteConfig.ts` for Videasy; `buildProviderUrl()` in `VideoPlayer.tsx` for others with feature flags from Remote Config.
+### Developer workflows
+- **Dev** (repo root): `npm run dev` → runs `electron-forge start` in `jstream-desktop/` (Vite dev server + Electron)
+- **Tests**: `npm run test` → `vitest` in `jstream-desktop/`. Config: `vitest.config.ts` (jsdom, globals: true)
+- **Package**: `cd jstream-desktop && npx electron-forge make` (see `forge.config.ts`)
+- **DevTools**: disabled by default. Set env `JSTREAM_DEVTOOLS=1` to enable
+- **TMDB debug logging**: set `JSTREAM_TMDB_DEBUG=1` for proxy/rate-limit logs
 
-### Project conventions & patterns (concrete)
-- **Cross-process pattern**: implement behavior in `main.ts` (ipcMain.handle) → expose wrapper in `preload.ts` via `contextBridge.exposeInMainWorld(...)` → call from renderer with `window.<api>`. Example:
-  1) Add `ipcMain.handle('my-action', handler)` in `src/main.ts`.
-  2) In `src/preload.ts` add `contextBridge.exposeInMainWorld('myApi', { doThing: () => ipcRenderer.invoke('my-action') })`.
-  3) Call from renderer: `await window.myApi.doThing()`.
-- **TMDB client**: `src/utils/tmdbClient.ts` prefers `window.tmdb.request(...)` (main-process proxy) for caching/rate-limits; fallback to direct fetch for tests.
-- **BrowserView player**: `player-view-create`/`player-view-destroy` IPC handlers manage BrowserView per renderer; HTML fullscreen sends `'player-view-fullscreen-request'` to renderer for separate window.
-- **DB migrations**: follow `src/main/database.ts` — add `try { db.exec('ALTER TABLE foo ADD COLUMN bar ...'); } catch(e) {}` for safe re-runs.
-- **Player providers**: Multiple named providers in `VideoPlayer.tsx` (e.g., 'Boreal' = Vidfast, 'Cygnus' = Vidsrc, 'Draco' = Vidlink); URLs built with TMDB IDs, season/episode, and feature flags.
-- **Remote Config**: Firebase Remote Config for dynamic settings; defaults in `remoteConfig.ts` if fetch fails or in Electron without opt-in.
+### Cross-process IPC pattern (follow this exactly)
+1. Add handler in `src/main.ts`: `ipcMain.handle('my-channel', async (event, ...args) => { ... })`
+2. Expose in `src/preload.ts`: `contextBridge.exposeInMainWorld('myApi', { doThing: (...args) => ipcRenderer.invoke('my-channel', ...args) })`
+3. Call from renderer: `await window.myApi.doThing(...args)`
 
-### Testing tips (practical examples)
-- **Renderer unit tests**: Run in Node JSDOM via Vitest. Preload APIs not present — mock on `globalThis.window`.
-  - Example (from `src/renderer/__tests__/HomeGrid.test.tsx`):
-    ```typescript
-    (globalThis as any).window = Object.assign(globalThis.window || {}, {
-      database: { favoritesList: vi.fn(async () => []), favoritesIs: vi.fn(async () => false) }
-    });
-    ```
-- **Mock TMDB**: `vi.mock('../../utils/tmdbClient', () => ({ fetchTMDB: vi.fn() }))`.
-- **Main-process code**: Uses native modules (better-sqlite3) — may need Electron-aware setups; most tests target renderer.
+### Data storage patterns
+- **Account data**: `accountDatabase.ts` — each user gets `user_data/<id>/data.json` with `{ favorites, watch_history, personalization, recent_watches }`. Functions like `userFavoritesAdd()` load/save the current user's JSON file on every call.
+- **Legacy DB shim**: `database.ts` exports a `db` object with `.prepare(sql)` that pattern-matches SQL strings and operates on `jstream.json` arrays. New features should use `accountDatabase.ts` instead.
+- **Adding user data fields**: add the field to the `UserDatabase` interface in `accountDatabase.ts`, initialize it in `createAccount()`, and add load/save functions following the existing pattern (e.g., `favoritesAdd`).
 
-### Integration & performance notes
-- **TMDB proxy**: In-memory cache (10 min TTL), per-webContents rate-limiting (120 req/min), guessing detection (blocks >120 distinct IDs/min).
-- **Dev server signals**: In dev, `MAIN_WINDOW_VITE_DEV_SERVER_URL` and `MAIN_WINDOW_VITE_NAME` injected; main prefers dev server URL.
-- **DevTools**: Main window opens DevTools by default in dev.
-- **Adblock**: WebRequest blocking for URLs, popup blocking, cosmetic injection on DOMContentLoaded/MutationObserver.
+### TMDB & Remote Config
+- `fetchTMDB()` in `src/utils/tmdbClient.ts` is the renderer's entry point — prefers `window.tmdb.request()` proxy, falls back to direct fetch in tests.
+- `fetchTMDB()` applies kids filter automatically when kids mode is active (genre/cert restrictions at API level + client-side blocked-word scan).
+- Firebase Remote Config is **skipped by default** in Electron (CSP issues). Hardcoded defaults in `remoteConfig.ts` are used unless `window.__JSTREAM_ENABLE_REMOTE_CONFIG = true`.
 
-### Files to read first (quick path)
-- `jstream-desktop/src/main.ts` — main-process logic (IPC, player, adblock)
-- `jstream-desktop/src/preload.ts` — canonical IPC surface and DOM injection
-- `jstream-desktop/src/main/database.ts` — DB schema and migration pattern
-- `jstream-desktop/src/utils/remoteConfig.ts` & `src/utils/tmdbClient.ts` — TMDB and player config
-- `jstream-desktop/src/renderer/App.tsx`, `VideoPlayer.tsx`, `VideoPlayerPage.tsx` — components showing player/IPC usage
+### Window behavior
+- **Frameless window**: `frame: false` — custom title bar controls via `window.windowControls`.
+- **Starts fullscreen**: `mainWindow.setFullScreen(true)` on `ready-to-show`.
+- **F11** toggles fullscreen; **Escape** exits fullscreen.
 
-### Quick actionable examples (copy-paste-ready)
-- **Add privileged action**: implement `ipcMain.handle(...)` → expose via `preload.ts` → call `window.myApi.doThing()`.
-- **Add DB column**: in `src/main/database.ts` add `try { db.exec('ALTER TABLE foo ADD COLUMN bar ...'); } catch(e) {}`.
-- **Use TMDB proxy**: in renderer, `await window.tmdb.request('movie/123')` (or `fetchTMDB()` helper).
-- **Add player provider**: in `VideoPlayer.tsx` `buildProviderUrl()`, add case for new provider with URL template.
-- **Test renderer component**: Mock `window.database` and `fetchTMDB`, render with `ChakraProvider`.
+### Testing patterns
+- **Environment**: Vitest + jsdom, globals enabled. Tests in `src/renderer/__tests__/`.
+- **Mock preload APIs** on `globalThis.window` before render:
+  ```typescript
+  (globalThis as any).window = Object.assign(globalThis.window || {}, {
+    database: { favoritesList: vi.fn(async () => []), favoritesIs: vi.fn(async () => false) }
+  });
+  ```
+- **Mock TMDB**: `vi.mock('../../utils/tmdbClient', () => ({ fetchTMDB: vi.fn() }))`
+- **Mock Remote Config** (avoids Firebase/IndexedDB errors in Node):
+  ```typescript
+  vi.mock('../../utils/remoteConfig', () => ({
+    getPlayerConfig: async () => ({ tmdbApiKey: 'fake', movieBaseUrl: '...', tvBaseUrl: '...', ... }),
+    buildVideasyUrl: (config, type, params) => `https://player.videasy.net/movie/${params.tmdbId}`
+  }))
+  ```
+- **Render with Chakra**: always wrap in `<ChakraProvider value={defaultSystem}>`.
 
----
-
-If anything above is unclear or you want this expanded with code examples for testing main-process behavior, CI packaging steps, or common refactor patterns, tell me which area to expand and I will iterate. ✅
+### Key files to read first
+- `jstream-desktop/src/main.ts` — IPC handlers, TMDB proxy, player views, adblock
+- `jstream-desktop/src/preload.ts` — complete preload API surface
+- `jstream-desktop/src/main/accountDatabase.ts` — multi-account system and user data
+- `jstream-desktop/src/utils/tmdbClient.ts` — TMDB client with kids filter integration
+- `jstream-desktop/src/utils/kidsFilter.ts` — kids content filtering logic
+- `jstream-desktop/src/renderer/App.tsx` — main UI shell, routing, account state
+- `jstream-desktop/src/renderer/VideoPlayer.tsx` — player providers and URL builders
