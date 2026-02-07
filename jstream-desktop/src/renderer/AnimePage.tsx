@@ -2,6 +2,8 @@ import React, { useEffect, useState, useRef } from 'react';
 import RowScroller from './components/RowScroller';
 import { Box, Button, Spinner } from '@chakra-ui/react';
 import { fetchTMDB } from '../utils/tmdbClient';
+import GenreGridCard from './components/GenreGridCard';
+import { getHiddenGenreIds, getKidsMode } from '../utils/kidsFilter';
 
 // Strict Anime selection rules (per user's specification):
 // - genre = Animation
@@ -13,9 +15,14 @@ import { fetchTMDB } from '../utils/tmdbClient';
 
 export default function AnimePage({ genres = [], onSelectMovie, onPlayMovie }: { genres?: any[], onSelectMovie?: (id:number, type?:'movie'|'tv')=>void, onPlayMovie?: (id:number|string, type?:'tv'|'movie', params?:Record<string,any>)=>void }) {
   // Core anime genre names to display in UI (mapped to TMDB genre ids)
-  const CORE_GENRES = [
+  // In kids mode, remove Horror, Thriller, Mystery, Romance, Drama
+  const KIDS_BLOCKED_ANIME_GENRES = new Set(['Horror', 'Thriller', 'Mystery', 'Romance', 'Drama']);
+  const ALL_CORE_GENRES = [
     'Action', 'Adventure', 'Fantasy', 'Sci-Fi', 'Romance', 'Comedy', 'Drama', 'Horror', 'Mystery', 'Thriller'
   ];
+  const CORE_GENRES = getKidsMode()
+    ? ALL_CORE_GENRES.filter(g => !KIDS_BLOCKED_ANIME_GENRES.has(g))
+    : ALL_CORE_GENRES;
 
   const [displayGenres, setDisplayGenres] = useState<any[]>([]);
   const [overview, setOverview] = useState<Record<number, any[]>>({});
@@ -270,26 +277,15 @@ function GenreView({ genreId, genreName, onBack, onSelectMovie, onPlayMovie, ani
     <Box>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
         <div style={{display:'flex',gap:12,alignItems:'center'}}>
-          <Button variant="ghost" onClick={onBack}>← Back</Button>
+          <Button variant="ghost" className="back-btn" onClick={onBack}>← Back</Button>
           <h2 style={{margin:0,fontSize:20,fontWeight:800}}>{genreName || 'Genre'}</h2>
         </div>
       </div>
 
       <div ref={containerRef} style={{height:'70vh', overflow:'auto', overscrollBehavior: 'contain'}}>
-        <div className="movie-grid" style={{gridTemplateColumns:'repeat(auto-fill, minmax(160px, 1fr))', paddingBottom:20}}>
+        <div className="movie-grid genre-grid" style={{gridTemplateColumns:'repeat(auto-fill, minmax(160px, 1fr))', paddingBottom:20}}>
           {items.map(i => (
-            <div key={`${i._media}-${i.id}`} className="movie-card" role="button" tabIndex={0} onClick={() => onSelectMovie && onSelectMovie(i.id, i._media === 'tv' ? 'tv' : 'movie')}>
-              <div className="movie-overlay">
-                <img className="movie-poster" src={i.poster_path ? `https://image.tmdb.org/t/p/w300${i.poster_path}` : undefined} alt={i.title || i.name} />
-                <div className="play-overlay" onClick={(ev)=>{ ev.stopPropagation(); if (onPlayMovie) onPlayMovie(i.id, i._media === 'tv' ? 'tv' : 'movie', { tmdbId: i.id }); }}>
-                  <div className="play-circle"><div className="play-triangle"/></div>
-                </div>
-              </div>
-              <div className="movie-info">
-                <div style={{fontWeight:700}}>{i.title || i.name}</div>
-                <div style={{fontSize:12,color:'var(--muted)'}}>{i.release_date || i.first_air_date}</div>
-              </div>
-            </div>
+            <GenreGridCard key={`${i._media}-${i.id}`} item={i} mediaType={i._media === 'tv' ? 'tv' : 'movie'} onSelect={onSelectMovie} onPlay={onPlayMovie} />
           ))}
         </div>
         {loading && <div style={{padding:12}}><Spinner /></div>}

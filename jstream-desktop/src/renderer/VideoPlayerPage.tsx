@@ -53,7 +53,7 @@ export default function VideoPlayerPage({ playerType = 'movie', params = null, o
   return (
     <div className="player-shell">
       <div className="player-top">
-        {onBack && <button className="button ghost" onClick={onBack}>← Back</button>}
+        {onBack && <button className="button ghost back-btn" onClick={onBack}>← Back</button>}
         <div className="player-title">{item.name || item.title}</div>
       </div>
       <div className="player-content">

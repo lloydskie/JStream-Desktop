@@ -3,8 +3,11 @@ import Row from './components/Row';
 import { Box, Button, Spinner } from '@chakra-ui/react';
 import { fetchTMDB } from '../utils/tmdbClient';
 import HeroBanner from './components/HeroBanner';
+import GenreGridCard from './components/GenreGridCard';
+import { filterGenresForKids } from '../utils/kidsFilter';
 
-export default function TVPage({ genres = [], onSelectMovie, onPlayMovie }: { genres?: any[], onSelectMovie?: (id:number, type?:'movie'|'tv')=>void, onPlayMovie?: (id:number|string, type?:'tv'|'movie', params?:Record<string,any>)=>void }) {
+export default function TVPage({ genres: rawGenres = [], onSelectMovie, onPlayMovie }: { genres?: any[], onSelectMovie?: (id:number, type?:'movie'|'tv')=>void, onPlayMovie?: (id:number|string, type?:'tv'|'movie', params?:Record<string,any>)=>void }) {
+  const genres = filterGenresForKids(rawGenres);
   const [overview, setOverview] = useState<Record<number, any[]>>({});
   const [loadingMap, setLoadingMap] = useState<Record<number, boolean>>({});
   const [selectedGenre, setSelectedGenre] = useState<number | null>(null);
@@ -209,26 +212,15 @@ function TVGenreView({ genreId, genreName, onBack, onSelectShow, onPlayShow }: {
     <Box pt="200px">
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12, padding: '0 16px'}}>
         <div style={{display:'flex',gap:12,alignItems:'center'}}>
-          <Button variant="ghost" onClick={onBack}>← Back</Button>
+          <Button variant="ghost" className="back-btn" onClick={onBack}>← Back</Button>
           <h2 style={{margin:0,fontSize:20,fontWeight:800}}>{genreName || 'Genre'}</h2>
         </div>
       </div>
 
       <div ref={containerRef} style={{height:'70vh', overflow:'auto', overscrollBehavior: 'contain'}}>
-        <div className="movie-grid" style={{gridTemplateColumns:'repeat(auto-fill, minmax(160px, 1fr))', paddingBottom:20}}>
+        <div className="movie-grid genre-grid" style={{gridTemplateColumns:'repeat(auto-fill, minmax(160px, 1fr))', paddingBottom:20}}>
           {items.map(i => (
-            <div key={i.id} className="movie-card" role="button" tabIndex={0} onClick={() => onSelectShow && onSelectShow(i.id)}>
-              <div className="movie-overlay">
-                <img className="movie-poster" src={i.poster_path ? `https://image.tmdb.org/t/p/w300${i.poster_path}` : undefined} alt={i.name} />
-                <div className="play-overlay" onClick={(ev)=>{ ev.stopPropagation(); if (onPlayShow) onPlayShow(i.id, 'tv', { tmdbId: i.id }); }}>
-                  <div className="play-circle"><div className="play-triangle"/></div>
-                </div>
-              </div>
-              <div className="movie-info">
-                <div style={{fontWeight:700}}>{i.name}</div>
-                <div style={{fontSize:12,color:'var(--muted)'}}>{i.first_air_date}</div>
-              </div>
-            </div>
+            <GenreGridCard key={i.id} item={i} mediaType="tv" onSelect={(id, type) => onSelectShow && onSelectShow(id)} onPlay={onPlayShow} />
           ))}
         </div>
         {loading && <div style={{padding:12}}><Spinner /></div>}

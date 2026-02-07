@@ -17,6 +17,8 @@ import AnimePage from './AnimePage';
 import CollectionsPage from './CollectionsPage';
 import PersonPage from './PersonPage';
 import NewPopularPage from './NewPopularPage';
+import CategoryPage from './CategoryPage';
+import type { CategoryDef } from './CategoryPage';
 import ContinueWatching from './components/ContinueWatching';
 import TopSearches from './components/TopSearches';
 import HeroBanner from './components/HeroBanner';
@@ -27,6 +29,7 @@ import { useState, useEffect } from 'react';
 import { fetchTMDB } from '../utils/tmdbClient';
 import { getPlayerConfig, buildVideasyUrl } from '../utils/remoteConfig';
 import { attachGlobalScrollCapture } from './utils/scrollCapture';
+import { setKidsMode, loadAdultIds, filterGenresForKids } from '../utils/kidsFilter';
 
 // App-level state: selected movie and active tab index
 
@@ -79,11 +82,43 @@ try {
   } catch (e) { /* ignore */ }
 } catch (e) { /* ignore */ }
 
+/**
+ * Detect whether the current account is a Kids profile and enable
+ * kids-mode filtering.  Returns true if it's a kids account.
+ * MUST be called and awaited BEFORE any TMDB data is fetched so
+ * that every fetch goes through the filter.
+ */
+async function activateKidsMode(): Promise<boolean> {
+  try {
+    const kf = (window as any).kidsFilter;
+    if (!kf) { setKidsMode(false); return false; }
+    const isKid = await kf.isKid();
+    setKidsMode(!!isKid);
+    if (isKid) {
+      console.log('Kids mode activated — loading adult ID blocklists...');
+      // Fire-and-forget; filtering still works without the export list
+      loadAdultIds().then(() => console.log('Kids filter: adult ID blocklists loaded'))
+                    .catch((e) => console.warn('Kids filter: failed to load adult IDs', e));
+    }
+    return !!isKid;
+  } catch (e) {
+    console.warn('Kids filter: failed to check isKid status', e);
+    setKidsMode(false);
+    return false;
+  }
+}
+
 export default function App() {
   // Account state - show welcome screen if no account is logged in
   const [currentAccountId, setCurrentAccountId] = useState<string | null | undefined>(undefined); // undefined = loading, null = no account
   const [accountsLoaded, setAccountsLoaded] = useState(false);
   const [currentAccountAvatar, setCurrentAccountAvatar] = useState<{ emoji?: string; image?: string } | null>(null);
+  // Kids mode readiness — true once the kids check has completed (prevents
+  // content pages from fetching before the filter is active)
+  const [kidsReady, setKidsReady] = useState(false);
+  // Tracks current kids mode to pass as a key to content components so they
+  // remount (refetch with filter) when switching between kids/adult profiles.
+  const [kidsModeActive, setKidsModeActive] = useState(false);
   
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -175,6 +210,11 @@ export default function App() {
         console.error('Failed to get current account:', e);
         setCurrentAccountId(null);
       }
+      // Determine kids mode BEFORE marking accounts as loaded so that
+      // all subsequent fetches go through the filter from the start.
+      const isKid = await activateKidsMode();
+      setKidsModeActive(isKid);
+      setKidsReady(true);
       setAccountsLoaded(true);
     })();
   }, []);
@@ -195,6 +235,28 @@ export default function App() {
       console.error('Failed to load avatar:', e);
     }
   };
+
+  // ──────────────────────────────────────────────────────────────
+  // Kids Content Filter — re-check when the current account changes
+  // (initial check already ran before accountsLoaded was set)
+  // ──────────────────────────────────────────────────────────────
+  const kidsSwitchRef = React.useRef(currentAccountId);
+  useEffect(() => {
+    // Skip the very first run — initial check already handled above
+    if (kidsSwitchRef.current === currentAccountId) return;
+    kidsSwitchRef.current = currentAccountId;
+    if (!accountsLoaded) return;
+    if (!currentAccountId) {
+      setKidsMode(false);
+      setKidsModeActive(false);
+      return;
+    }
+    // Re-check kids mode for the newly selected account
+    (async () => {
+      const isKid = await activateKidsMode();
+      setKidsModeActive(isKid);
+    })();
+  }, [accountsLoaded, currentAccountId]);
 
   // Handler when a new account is created
   const handleAccountCreated = async (account: { id: string; name: string; avatar: string; avatarImage?: string }) => {
@@ -291,6 +353,7 @@ export default function App() {
   const [detailsModalTmdbId, setDetailsModalTmdbId] = useState<number | null>(null);
   const [detailsModalType, setDetailsModalType] = useState<'movie'|'tv'|null>(null);
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
+  const [exploreCategoryDef, setExploreCategoryDef] = useState<CategoryDef | null>(null);
   const [playerType, setPlayerType] = useState<'movie' | 'tv'>('movie');
   const [playerParams, setPlayerParams] = useState<Record<string, any> | null>(null);
   const [playerModalOpen, setPlayerModalOpen] = useState(false);
@@ -437,16 +500,16 @@ export default function App() {
       } catch (err) {
         console.error('Failed to load last selected movie:', err);
       }
-      // fetch genre lists for movies and tv
+      // fetch genre lists for movies and tv — filter for kids mode
       try {
         const g = await fetchTMDB('genre/movie/list');
-        setGenres(g.genres || []);
+        setGenres(filterGenresForKids(g.genres || []));
       } catch (e) {
         console.warn('Failed to fetch movie genres', e);
       }
       try {
         const tg = await fetchTMDB('genre/tv/list');
-        setTvGenres(tg.genres || []);
+        setTvGenres(filterGenresForKids(tg.genres || []));
       } catch (e) {
         console.warn('Failed to fetch tv genres', e);
       }
@@ -473,13 +536,22 @@ export default function App() {
 
   function handleGoToCollections(collectionId?: number) {
     setSelectedCollectionId(collectionId || null);
-    setActiveIndex(8); // switch to Collections tab
+    setActiveIndex(6); // switch to Collections tab
   }
+
+  const [prevPageIndex, setPrevPageIndex] = useState<number>(0);
 
   function handleSelectPerson(personId: number) {
     setSelectedPersonId(personId);
+    setPrevPageIndex(activeIndex);
     // Person panel is appended at the end of TabPanels
     setActiveIndex(10);
+  }
+
+  function handleExploreCategory(cat: CategoryDef) {
+    setExploreCategoryDef(cat);
+    setPrevPageIndex(activeIndex);
+    setActiveIndex(11); // switch to Category page tab
   }
 
   // header search removed
@@ -544,19 +616,79 @@ export default function App() {
 
   // Reset selectedCollectionId when navigating away from Collections tab
   useEffect(() => {
-    if (activeIndex !== 8) {
+    if (activeIndex !== 6) {
       setSelectedCollectionId(null);
     }
   }, [activeIndex]);
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts — must match what's shown in the WelcomeScreen tutorial:
+  // F11        → Toggle fullscreen mode
+  // Escape     → Exit fullscreen / Close modals (player modal, details modal)
+  // Ctrl+K     → Open search
+  // B          → Go back to Home (only when not typing in an input/textarea)
   useEffect(() => {
     function keyHandler(e: KeyboardEvent) {
-      if (e.key === 'b') {
-        setActiveIndex(0);
+      const target = e.target as HTMLElement;
+      const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+
+      // F11 — Toggle fullscreen
+      if (e.key === 'F11') {
+        e.preventDefault();
+        try { (window as any).windowControls?.toggleFullscreen(); } catch (err) { console.error('F11 fullscreen toggle failed', err); }
+        return;
       }
-      if (e.key === 'f') {
-        // toggle favorite (for selected movie)
+
+      // Escape — Exit fullscreen, close player modal, close details modal, close search
+      if (e.key === 'Escape') {
+        // Priority order: player modal → details modal → fullscreen → search
+        if (playerModalOpen) {
+          handleClosePlayerModal();
+          return;
+        }
+        if (detailsModalOpen) {
+          setDetailsModalOpen(false);
+          return;
+        }
+        if (isFullscreen) {
+          try { (window as any).windowControls?.exitFullscreen(); } catch (err) {}
+          return;
+        }
+        if (searchOpen) {
+          setSearchOpen(false);
+          setHeaderSearchQuery('');
+          if (activeIndex === 7 && prevActiveIndex !== null) {
+            setActiveIndex(prevActiveIndex);
+            setPrevActiveIndex(null);
+          }
+          return;
+        }
+        return;
+      }
+
+      // Ctrl+K — Open search
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setSearchOpen(true);
+        // Switch to search tab
+        if (activeIndex !== 7) {
+          setPrevActiveIndex(activeIndex);
+          setActiveIndex(7);
+        }
+        setTimeout(() => searchInputRef.current?.focus(), 50);
+        return;
+      }
+
+      // Skip single-key shortcuts when user is typing in an input
+      if (isTyping) return;
+
+      // B — Go back to Home
+      if (e.key === 'b' || e.key === 'B') {
+        setActiveIndex(0);
+        return;
+      }
+
+      // F — Toggle favorite (legacy shortcut, not shown in tutorial)
+      if (e.key === 'f' || e.key === 'F') {
         if (selectedTmdbId) {
           (async () => {
             try {
@@ -573,10 +705,10 @@ export default function App() {
     }
     window.addEventListener('keydown', keyHandler);
     return () => window.removeEventListener('keydown', keyHandler);
-  }, [selectedTmdbId]);
+  }, [selectedTmdbId, playerModalOpen, detailsModalOpen, isFullscreen, searchOpen, activeIndex, prevActiveIndex]);
 
-  // Show loading screen while checking for account
-  if (!accountsLoaded) {
+  // Show loading screen while checking for account and kids mode
+  if (!accountsLoaded || !kidsReady) {
     return (
       <div style={{
         position: 'fixed',
@@ -752,7 +884,7 @@ export default function App() {
             )}
             <ChakraProvider value={defaultSystem}>
               <ErrorBoundary>
-                {featuredMovie && <HeroBanner movie={featuredMovie} onPlay={handlePlayMovie} onMore={handleSelectMovie} fullBleed isModalOpen={playerModalOpen || activeIndex === 10} isVisible={activeIndex === 0} />}
+                {featuredMovie && <HeroBanner movie={featuredMovie} onPlay={handlePlayMovie} onMore={handleSelectMovie} onGoToCollections={handleGoToCollections} fullBleed isModalOpen={playerModalOpen || activeIndex === 10} isVisible={activeIndex === 0} />}
                 <Tabs index={activeIndex} onChange={index => setActiveIndex(index)} isFitted variant="enclosed" isLazy lazyBehavior="unmount" style={{width: '100%'}}>
 
                           {/* Header is portaled to #header-root so it can overlay the full-bleed hero without being constrained */}
@@ -768,6 +900,7 @@ export default function App() {
                                   <Tab>New & Popular</Tab>
                                   <Tab>My List</Tab>
                                   <Tab>Browse by Languages</Tab>
+                                  <Tab>Collections</Tab>
                                 </TabList>
                                 <div className="header-controls">
                                   {/* Header search: expands inline when toggled. Typing will switch to Search tab. */}
@@ -782,11 +915,11 @@ export default function App() {
                                         setHeaderSearchQuery(v);
                                         // If user starts typing, show SearchPage and remember previous tab
                                         if (v && v.length > 0) {
-                                          if (activeIndex !== 6 && prevActiveIndex === null) setPrevActiveIndex(activeIndex);
-                                          setActiveIndex(6);
+                                          if (activeIndex !== 7 && prevActiveIndex === null) setPrevActiveIndex(activeIndex);
+                                          setActiveIndex(7);
                                         } else {
                                           // If cleared while on Search, restore previous tab
-                                          if (activeIndex === 6 && prevActiveIndex !== null) {
+                                          if (activeIndex === 7 && prevActiveIndex !== null) {
                                             setActiveIndex(prevActiveIndex);
                                             setPrevActiveIndex(null);
                                             setSearchOpen(false);
@@ -816,7 +949,7 @@ export default function App() {
                                     </button>
                                   )}
 
-                                  <button className="profile-btn button ghost" title="Profile" onClick={() => setActiveIndex(7)}>
+                                  <button className="profile-btn button ghost" title="Profile" onClick={() => setActiveIndex(8)}>
                                     {currentAccountAvatar?.image ? (
                                       <img src={currentAccountAvatar.image} alt="Profile" style={{width:28,height:28,objectFit:'cover',borderRadius:'50%'}} />
                                     ) : currentAccountAvatar?.emoji ? (
@@ -854,7 +987,7 @@ export default function App() {
                 <div>
                   <label style={{color:'#fff',fontSize:12}}>Search</label>
                   <div style={{position:'relative', marginTop:6}}>
-                    <input id="mobile-search" className="search-input input" placeholder="Search..." onFocus={() => { setActiveIndex(6); setIsMobileMenuOpen(false); }} />
+                    <input id="mobile-search" className="search-input input" placeholder="Search..." onFocus={() => { setActiveIndex(7); setIsMobileMenuOpen(false); }} />
                   </div>
                 </div>
                 <div style={{display:'flex',flexDirection:'column',gap:8}}>
@@ -864,8 +997,8 @@ export default function App() {
                   <button className="menu-link" onClick={() => { setActiveIndex(3); setIsMobileMenuOpen(false); }}>New & Popular</button>
                   <button className="menu-link" onClick={() => { setActiveIndex(4); setIsMobileMenuOpen(false); }}>My List</button>
                   <button className="menu-link" onClick={() => { setActiveIndex(5); setIsMobileMenuOpen(false); }}>Browse by Languages</button>
-                  <button className="menu-link" onClick={() => { setActiveIndex(6); setIsMobileMenuOpen(false); }}>Search</button>
-                  <button className="menu-link" onClick={() => { setActiveIndex(7); setIsMobileMenuOpen(false); }}>Profile</button>
+                  <button className="menu-link" onClick={() => { setActiveIndex(7); setIsMobileMenuOpen(false); }}>Search</button>
+                  <button className="menu-link" onClick={() => { setActiveIndex(8); setIsMobileMenuOpen(false); }}>Profile</button>
                 </div>
               </div>
             </div>
@@ -873,13 +1006,14 @@ export default function App() {
           {activeIndex === 0 && <ContinueWatching onPlay={handlePlayMovie} onSelect={handleSelectMovie} />}
           {activeIndex === 0 && <TopSearches onPlay={handlePlayMovie} onSelect={handleSelectMovie} />}
             <div className="app-shell" aria-hidden={playerModalOpen || detailsModalOpen} style={playerModalOpen || detailsModalOpen ? { pointerEvents: 'none' } : undefined}>
-              <TabPanels style={{width: '100%', padding: 0}}>
-                <TabPanel sx={{padding: 0}}><HomeGrid onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedTmdbId={selectedTmdbId} selectedGenre={selectedGenre} isModalOpen={playerModalOpen} onSetFeatured={setFeaturedMovie} /></TabPanel>
+              <TabPanels style={{width: '100%', padding: 0}} key={`panels-kids-${kidsModeActive}`}>
+                <TabPanel sx={{padding: 0}}><HomeGrid onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedTmdbId={selectedTmdbId} selectedGenre={selectedGenre} isModalOpen={playerModalOpen} onSetFeatured={setFeaturedMovie} onSelectPerson={handleSelectPerson} onExploreCategory={handleExploreCategory} /></TabPanel>
                 <TabPanel sx={{padding: 0}}><TVPage genres={tvGenres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
                 <TabPanel sx={{padding: 0}}><MoviesPage genres={genres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
                 <TabPanel sx={{padding: 0}}><NewPopularPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
                 <TabPanel sx={{padding: 0}}><MyListPage onPlay={handlePlayMovie} onSelect={handleSelectMovie} /></TabPanel>
                 <TabPanel sx={{padding: 0}}><BrowseLanguagesPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
+                <TabPanel sx={{padding: 0}}><CollectionsPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} onSelectPerson={handleSelectPerson} selectedCollectionId={selectedCollectionId} /></TabPanel>
                 <TabPanel sx={{padding: 0}}>
                   <SearchPage
                     movieGenres={genres}
@@ -899,10 +1033,10 @@ export default function App() {
                   />
                 </TabPanel>
                 <TabPanel sx={{padding: 0}}><ProfilePage onSignOut={() => { setCurrentAccountId(null); setCurrentAccountAvatar(null); }} /></TabPanel>
-                <TabPanel sx={{padding: 0}}><CollectionsPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedCollectionId={selectedCollectionId} /></TabPanel>
                 {/* Details page converted to modal — removed page panel */}
                 <TabPanel><VideoPlayerPage playerType={playerType} params={playerParams} onBack={handleBackFromPlayer} player={selectedPlayer} /></TabPanel>
-                <TabPanel><PersonPage personId={selectedPersonId} onSelectWork={handleSelectMovie} /></TabPanel>
+                <TabPanel><PersonPage personId={selectedPersonId} onSelectWork={handleSelectMovie} onBack={() => setActiveIndex(prevPageIndex)} /></TabPanel>
+                <TabPanel sx={{padding: 0}}><CategoryPage category={exploreCategoryDef} onBack={() => setActiveIndex(prevPageIndex)} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
               </TabPanels>
             </div>
           {/* Modal removed — Play now opens the Player tab where `VideoPlayerPage` renders the embedded player */}
@@ -956,12 +1090,12 @@ export default function App() {
                           console.info('App: setPlayerModalParams (season) ->', newParams);
                         } catch (err) {}
                       }}
-                      style={{ padding: '6px 8px', borderRadius: 6, background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.06)' }}
+                      style={{ padding: '6px 8px', borderRadius: 6, background: '#1a1a2e', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
                     >
-                      <option value="">Select season</option>
+                      <option value="" style={{ background: '#1a1a2e', color: '#fff' }}>Select season</option>
                       {(playerSeasons || []).map((s: any) => {
                         const seasonVal = s.season_number || s.id;
-                        return <option key={String(seasonVal)} value={seasonVal}>{s.name || `Season ${seasonVal}`}</option>;
+                        return <option key={String(seasonVal)} value={seasonVal} style={{ background: '#1a1a2e', color: '#fff' }}>{s.name || `Season ${seasonVal}`}</option>;
                       })}
                     </select>
 
@@ -977,13 +1111,13 @@ export default function App() {
                           console.info('App: setPlayerModalParams (episode) ->', newParams);
                         } catch (err) {}
                       }}
-                      style={{ padding: '6px 8px', borderRadius: 6, background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,0.06)' }}
+                      style={{ padding: '6px 8px', borderRadius: 6, background: '#1a1a2e', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' }}
                     >
-                      <option value="">Select episode</option>
+                      <option value="" style={{ background: '#1a1a2e', color: '#fff' }}>Select episode</option>
                       {(playerSeasonEpisodes || []).map((ep: any) => {
                         const val = ep.episode_number || ep.id;
                         const label = ep.episode_number ? `${ep.episode_number}. ${ep.name}` : (ep.name || `Episode ${val}`);
-                        return <option key={String(val)} value={val}>{label}</option>;
+                        return <option key={String(val)} value={val} style={{ background: '#1a1a2e', color: '#fff' }}>{label}</option>;
                       })}
                     </select>
                   </div>

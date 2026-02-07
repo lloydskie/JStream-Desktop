@@ -214,6 +214,14 @@ export function logout(): void {
   setCurrentAccountId(null);
 }
 
+// Check if the currently logged-in account is a Kids profile
+export function isCurrentAccountKid(): boolean {
+  const data = loadAccountsData();
+  if (!data.currentAccountId) return false;
+  const account = data.accounts.find(a => a.id === data.currentAccountId);
+  return account ? account.isKid : false;
+}
+
 // Update account profile (name and/or avatar)
 export function updateAccountProfile(accountId: string, updates: { name?: string; avatar?: string }): boolean {
   const data = loadAccountsData();

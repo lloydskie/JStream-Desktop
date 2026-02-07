@@ -242,6 +242,24 @@ body{
 .more-info-btn svg{ display:inline-block; flex:0 0 auto }
 .more-info-btn span{ font-size:13px; font-weight:600 }
 .more-info-btn:hover{ background: rgba(255,255,255,0.10) }
+
+/* Collection button (hero & modal) */
+.collection-btn{
+  background: rgba(255,255,255,0.06);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  height: 44px;
+}
+.collection-btn svg{ display:inline-block; flex:0 0 auto }
+.collection-btn span{ font-size:13px; font-weight:600 }
+.collection-btn:hover{ background: rgba(255,255,255,0.10) }
+
 .now-badge{ background:var(--accent); color:#fff; padding:4px 6px; border-radius:4px; font-size:11px }
 
 /* show overlay play icon on hover */
@@ -257,6 +275,75 @@ body{
 /* responsive poster sizes */
 @media (min-width: 900px){ .movie-poster{ height:var(--poster-large) } }
 @media (min-width: 1200px){ .movie-poster{ height:var(--poster-large) } }
+
+/* Genre grid: poster-only cards without title/date/play overlay */
+.genre-grid { gap: 12px; padding: 0 16px; }
+.genre-grid-card { padding: 0; }
+.genre-grid-card .movie-overlay { border-radius: 8px; overflow: hidden; }
+.genre-grid-card .movie-poster { height: auto; aspect-ratio: 2/3; border-radius: 8px; }
+.genre-grid-card .movie-info,
+.genre-grid-card .play-overlay { display: none !important; }
+
+/* Actor circle row — circular avatars scrolling horizontally */
+.actor-circle-row { margin-bottom: 8px; }
+.actor-circle-scroll {
+  display: flex;
+  gap: 18px;
+  overflow-x: auto;
+  padding: 8px 0 12px;
+  scrollbar-width: none;
+}
+.actor-circle-scroll::-webkit-scrollbar { display: none; }
+.actor-circle-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+  width: 100px;
+  transition: transform 180ms ease;
+}
+.actor-circle-item:hover { transform: scale(1.08); }
+.actor-circle-item:focus-visible { outline: 2px solid rgba(229,9,20,0.6); outline-offset: 4px; border-radius: 50%; }
+.actor-circle-avatar {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 3px solid rgba(255,255,255,0.12);
+  background: #1a1a2e;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+.actor-circle-item:hover .actor-circle-avatar {
+  border-color: rgba(229,9,20,0.6);
+  box-shadow: 0 0 16px rgba(229,9,20,0.25);
+}
+.actor-circle-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.actor-circle-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #2a2a4a 0%, #1a1a2e 100%);
+}
+.actor-circle-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ccc;
+  text-align: center;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+.actor-circle-item:hover .actor-circle-name { color: #fff; }
 
 .row-scroll{ display:flex; gap:16px; overflow-x:auto; overflow-y:hidden; padding:6px 6px 6px 6px; align-items:flex-start }
 .row-scroll .movie-item{ min-width:180px; max-width:var(--movie-card-width); flex:0 0 var(--movie-card-width); overflow: visible; position: relative; }
@@ -522,6 +609,7 @@ body{
 }
 .details-modal-container .hero-actions > .play-cta,
 .details-modal-container .hero-actions > .more-info-btn,
+.details-modal-container .hero-actions > .collection-btn,
 .details-modal-container .hero-actions > .hero-certification{
   height: 44px;
   min-width: 120px;
@@ -537,6 +625,7 @@ body{
 .details-modal-container .hero-actions > .play-cta .play-icon{ width: 18px; height: 18px; }
 .details-modal-container .hero-actions > .hero-certification{ min-width: auto; padding: 0 10px; }
 .details-modal-container .hero-actions > .more-info-btn{ background: rgba(255,255,255,0.06); }
+.details-modal-container .hero-actions > .collection-btn{ background: rgba(255,255,255,0.06); }
 
 /* Keep the mute button circular and smaller */
 .details-modal-container .hero-actions > .hero-mute-inline{
@@ -1976,6 +2065,23 @@ body.app-fullscreen.show-fullscreen-bar #header-root {
   display: none !important;
 }
 
+/* Back button — high-contrast pill for dark UI */
+.back-btn {
+  color: #fff !important;
+  background: rgba(255,255,255,0.12) !important;
+  border: 1px solid rgba(255,255,255,0.18) !important;
+  border-radius: 8px !important;
+  padding: 6px 16px !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  cursor: pointer !important;
+  transition: background 0.18s, border-color 0.18s !important;
+}
+.back-btn:hover {
+  background: rgba(255,255,255,0.22) !important;
+  border-color: rgba(255,255,255,0.32) !important;
+}
+
 /* Fullscreen exit bar - ensure it's always on top */
 .fullscreen-exit-bar {
   position: fixed !important;
@@ -1986,7 +2092,22 @@ body.app-fullscreen.show-fullscreen-bar #header-root {
   pointer-events: auto !important;
 }
 
+/* ─── Hide scrollbar utility ─── */
+.hide-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.hide-scrollbar::-webkit-scrollbar { display: none; }
 
+/* ─── Dark <select> dropdown styling ─── */
+.dark-select { -webkit-appearance: none; appearance: none; }
+.dark-select option { background: #1a1a2e; color: #fff; }
 
-
+/* ─── Cast & Crew RowScroller cards (Collections page) ─── */
+.cast-crew-scroll { display: flex; gap: 16px; overflow-x: auto; overflow-y: hidden; padding: 6px 6px; align-items: flex-start; scroll-snap-type: x mandatory; scrollbar-width: none; -ms-overflow-style: none; }
+.cast-crew-scroll::-webkit-scrollbar { display: none; }
+.cast-crew-item { min-width: 120px; max-width: 140px; flex: 0 0 120px; scroll-snap-align: start; overflow: visible; position: relative; }
+.cast-crew-card { text-align: center; cursor: default; }
+.cast-crew-avatar { width: 100px; height: 100px; border-radius: 50%; overflow: hidden; margin: 0 auto 8px; background: #222; }
+.cast-crew-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.cast-crew-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #555; }
+.cast-crew-name { font-size: 13px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cast-crew-role { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 

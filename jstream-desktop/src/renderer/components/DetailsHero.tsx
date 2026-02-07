@@ -4,8 +4,9 @@ import { fetchTMDB } from '../../utils/tmdbClient';
 import PlusMinusIcon from './icons/PlusMinusIcon';
 import InfoIcon from './icons/InfoIcon';
 import SpeakerIcon from './icons/SpeakerIcon';
+import CollectionIcon from './icons/CollectionIcon';
 
-export default function DetailsHero({ movie, onPlay, onMore, fullBleed, isModalOpen, isVisible = true, mediaType = 'movie' }: { movie?: any, onPlay?: (id:number, type?:'movie'|'tv')=>void, onMore?: (id:number, type?:'movie'|'tv')=>void, fullBleed?: boolean, isModalOpen?: boolean, isVisible?: boolean, mediaType?: 'movie'|'tv' }) {
+export default function DetailsHero({ movie, onPlay, onMore, onGoToCollections, fullBleed, isModalOpen, isVisible = true, mediaType = 'movie' }: { movie?: any, onPlay?: (id:number, type?:'movie'|'tv')=>void, onMore?: (id:number, type?:'movie'|'tv')=>void, onGoToCollections?: (collectionId?: number)=>void, fullBleed?: boolean, isModalOpen?: boolean, isVisible?: boolean, mediaType?: 'movie'|'tv' }) {
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [trailerError, setTrailerError] = useState<string | null>(null);
 
@@ -112,6 +113,9 @@ export default function DetailsHero({ movie, onPlay, onMore, fullBleed, isModalO
   const interactionTimer = useRef<number | null>(null);
   const heroRef = useRef<HTMLDivElement | null>(null);
   const [mutePos, setMutePos] = useState<{ top: number; right?: number; left?: number } | null>(null);
+
+  // Collection info — movie details fetched by DetailsModal already include belongs_to_collection
+  const collectionInfo = movie?.belongs_to_collection ? { id: movie.belongs_to_collection.id, name: movie.belongs_to_collection.name } : null;
 
   const [logoUrl, setLogoUrl] = useState<string | null>(movie?.logo_path ? `https://image.tmdb.org/t/p/original${movie.logo_path}` : null);
 
@@ -495,6 +499,18 @@ export default function DetailsHero({ movie, onPlay, onMore, fullBleed, isModalO
                 >
                   <InfoIcon size={16} color="#fff" />
                   <span>More Info</span>
+                </button>
+                )}
+
+                {collectionInfo && onGoToCollections && (
+                <button
+                  className="collection-btn"
+                  onClick={() => onGoToCollections(collectionInfo.id)}
+                  aria-label={`View ${collectionInfo.name}`}
+                  title={collectionInfo.name}
+                >
+                  <CollectionIcon size={16} color="#fff" />
+                  <span>Collection</span>
                 </button>
                 )}
 

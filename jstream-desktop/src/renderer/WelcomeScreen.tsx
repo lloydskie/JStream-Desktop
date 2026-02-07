@@ -269,10 +269,10 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: '40px',
-    paddingTop: '72px',
+    padding: '16px',
+    paddingTop: '48px',
     color: 'white',
-    overflow: 'auto',
+    overflow: 'hidden',
     zIndex: 1,
   };
 
@@ -290,9 +290,11 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
   const cardStyle: React.CSSProperties = {
     background: 'rgba(31, 41, 55, 0.95)',
     borderRadius: '20px',
-    padding: '48px',
+    padding: '28px 32px',
     maxWidth: '600px',
     width: '100%',
+    maxHeight: 'calc(100vh - 80px)',
+    overflowY: 'auto',
     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
     backdropFilter: 'blur(10px)',
     position: 'relative',
@@ -327,13 +329,14 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
   const inputStyle: React.CSSProperties = {
     background: '#374151',
     border: '2px solid #4b5563',
-    borderRadius: '12px',
-    padding: '16px 20px',
+    borderRadius: '10px',
+    padding: '10px 14px',
     color: 'white',
     width: '100%',
-    fontSize: '16px',
+    fontSize: '14px',
     outline: 'none',
     transition: 'border-color 0.2s',
+    boxSizing: 'border-box' as const,
   };
 
   // Welcome Step
@@ -517,21 +520,20 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
     return (
       <div style={containerStyle}>
         <div style={overlayStyle} />
-        <div style={cardStyle}>
-          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-            <h2 style={{ fontSize: '28px', fontWeight: 'bold', marginBottom: '8px' }}>Create Your Profile</h2>
-            <p style={{ color: '#9ca3af' }}>Set up your personalized account</p>
+        <div style={{ ...cardStyle, maxWidth: '520px', padding: '20px 28px' }}>
+          <div style={{ textAlign: 'center', marginBottom: '14px' }}>
+            <h2 style={{ fontSize: '22px', fontWeight: 'bold', marginBottom: '4px' }}>Create Your Profile</h2>
+            <p style={{ color: '#9ca3af', fontSize: '13px' }}>Set up your personalized account</p>
           </div>
 
-          {/* Avatar selection */}
-          <div style={{ marginBottom: '24px' }}>
-            <p style={{ color: '#9ca3af', fontSize: '14px', marginBottom: '12px' }}>Choose your avatar</p>
-            
-            {/* Current avatar preview */}
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+          {/* Avatar selection — compact row */}
+          <div style={{ marginBottom: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '10px' }}>
+              {/* Avatar preview */}
               <div style={{
-                width: '100px',
-                height: '100px',
+                width: '64px',
+                height: '64px',
+                minWidth: '64px',
                 borderRadius: '50%',
                 border: '3px solid #dc2626',
                 background: '#374151',
@@ -543,64 +545,60 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
                 {newAccountAvatarImage ? (
                   <img src={newAccountAvatarImage} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
-                  <span style={{ fontSize: '48px' }}>{newAccountAvatar}</span>
+                  <span style={{ fontSize: '32px' }}>{newAccountAvatar}</span>
+                )}
+              </div>
+
+              {/* Upload button */}
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  style={{ display: 'none' }}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    padding: '6px 14px',
+                    background: newAccountAvatarImage ? '#059669' : '#374151',
+                    color: 'white',
+                    border: '1px solid #4b5563',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  📷 {newAccountAvatarImage ? 'Change' : 'Upload Photo'}
+                </button>
+                {newAccountAvatarImage && (
+                  <button
+                    onClick={() => {
+                      setNewAccountAvatarImage(null);
+                      setNewAccountAvatar('👤');
+                    }}
+                    style={{
+                      padding: '6px 14px',
+                      background: 'transparent',
+                      color: '#f87171',
+                      border: '1px solid #f87171',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                    }}
+                  >
+                    Remove
+                  </button>
                 )}
               </div>
             </div>
 
-            {/* Upload image button */}
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-              <input
-                type="file"
-                ref={fileInputRef}
-                accept="image/*"
-                onChange={handleImageUpload}
-                style={{ display: 'none' }}
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                style={{
-                  padding: '10px 20px',
-                  background: newAccountAvatarImage ? '#059669' : '#374151',
-                  color: 'white',
-                  border: '1px solid #4b5563',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                }}
-              >
-                📷 {newAccountAvatarImage ? 'Change Photo' : 'Upload Photo'}
-              </button>
-              {newAccountAvatarImage && (
-                <button
-                  onClick={() => {
-                    setNewAccountAvatarImage(null);
-                    setNewAccountAvatar('👤');
-                  }}
-                  style={{
-                    padding: '10px 20px',
-                    background: 'transparent',
-                    color: '#f87171',
-                    border: '1px solid #f87171',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    marginLeft: '8px',
-                  }}
-                >
-                  Remove
-                </button>
-              )}
-            </div>
-
-            <p style={{ color: '#6b7280', fontSize: '12px', textAlign: 'center', marginBottom: '12px' }}>
-              Or choose an emoji avatar:
-            </p>
-            
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
+            {/* Emoji avatars — compact grid */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'center' }}>
               {avatarOptions.map(av => (
                 <button
                   key={av}
@@ -609,14 +607,15 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
                     setNewAccountAvatarImage(null);
                   }}
                   style={{
-                    width: '50px',
-                    height: '50px',
-                    borderRadius: '12px',
-                    border: !newAccountAvatarImage && newAccountAvatar === av ? '3px solid #dc2626' : '2px solid #4b5563',
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    border: !newAccountAvatarImage && newAccountAvatar === av ? '2px solid #dc2626' : '1px solid #4b5563',
                     background: !newAccountAvatarImage && newAccountAvatar === av ? 'rgba(220, 38, 38, 0.2)' : '#374151',
-                    fontSize: '24px',
+                    fontSize: '18px',
                     cursor: 'pointer',
-                    transition: 'all 0.2s'
+                    transition: 'all 0.2s',
+                    padding: 0,
                   }}
                 >
                   {av}
@@ -626,8 +625,8 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
           </div>
 
           {/* Name input */}
-          <div style={{ marginBottom: '20px' }}>
-            <p style={{ color: '#9ca3af', fontSize: '14px', marginBottom: '8px' }}>Profile Name</p>
+          <div style={{ marginBottom: '10px' }}>
+            <p style={{ color: '#9ca3af', fontSize: '12px', marginBottom: '4px' }}>Profile Name</p>
             <input
               type="text"
               value={newAccountName}
@@ -637,46 +636,46 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
             />
           </div>
 
-          {/* PIN input */}
-          <div style={{ marginBottom: '20px' }}>
-            <p style={{ color: '#9ca3af', fontSize: '14px', marginBottom: '8px' }}>Create a PIN (at least 4 digits)</p>
-            <input
-              type="password"
-              value={newAccountPin}
-              onChange={(e) => { setNewAccountPin(e.target.value.replace(/\D/g, '')); setCreateError(''); }}
-              placeholder="Enter PIN"
-              maxLength={8}
-              style={inputStyle}
-            />
-          </div>
-
-          {/* Confirm PIN */}
-          <div style={{ marginBottom: '20px' }}>
-            <p style={{ color: '#9ca3af', fontSize: '14px', marginBottom: '8px' }}>Confirm PIN</p>
-            <input
-              type="password"
-              value={confirmPin}
-              onChange={(e) => { setConfirmPin(e.target.value.replace(/\D/g, '')); setCreateError(''); }}
-              placeholder="Confirm PIN"
-              maxLength={8}
-              style={inputStyle}
-            />
+          {/* PIN fields side by side */}
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+            <div style={{ flex: 1 }}>
+              <p style={{ color: '#9ca3af', fontSize: '12px', marginBottom: '4px' }}>Create PIN (4+ digits)</p>
+              <input
+                type="password"
+                value={newAccountPin}
+                onChange={(e) => { setNewAccountPin(e.target.value.replace(/\D/g, '')); setCreateError(''); }}
+                placeholder="PIN"
+                maxLength={8}
+                style={inputStyle}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ color: '#9ca3af', fontSize: '12px', marginBottom: '4px' }}>Confirm PIN</p>
+              <input
+                type="password"
+                value={confirmPin}
+                onChange={(e) => { setConfirmPin(e.target.value.replace(/\D/g, '')); setCreateError(''); }}
+                placeholder="Confirm"
+                maxLength={8}
+                style={inputStyle}
+              />
+            </div>
           </div>
 
           {/* Error message */}
           {createError && (
-            <p style={{ color: '#f87171', fontSize: '14px', marginBottom: '16px', textAlign: 'center', padding: '12px', background: 'rgba(248, 113, 113, 0.1)', borderRadius: '8px' }}>
+            <p style={{ color: '#f87171', fontSize: '13px', marginBottom: '10px', textAlign: 'center', padding: '8px', background: 'rgba(248, 113, 113, 0.1)', borderRadius: '8px' }}>
               {createError}
             </p>
           )}
 
-          {/* Kids profile toggle */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '32px', padding: '16px', background: '#374151', borderRadius: '12px' }}>
+          {/* Kids profile toggle — compact */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', padding: '10px 14px', background: '#374151', borderRadius: '10px' }}>
             <div>
-              <p style={{ fontWeight: 600 }}>Kids Profile</p>
-              <p style={{ fontSize: '14px', color: '#9ca3af' }}>Enable parental controls</p>
+              <p style={{ fontWeight: 600, fontSize: '14px' }}>Kids Profile</p>
+              <p style={{ fontSize: '12px', color: '#9ca3af' }}>Enable parental controls</p>
             </div>
-            <label style={{ position: 'relative', display: 'inline-block', width: '56px', height: '28px' }}>
+            <label style={{ position: 'relative', display: 'inline-block', width: '48px', height: '24px' }}>
               <input 
                 type="checkbox" 
                 checked={newAccountIsKid} 
@@ -688,13 +687,13 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
                 cursor: 'pointer',
                 top: 0, left: 0, right: 0, bottom: 0,
                 background: newAccountIsKid ? '#dc2626' : '#4b5563',
-                borderRadius: '28px',
+                borderRadius: '24px',
                 transition: '0.3s'
               }}>
                 <span style={{
                   position: 'absolute',
-                  height: '22px', width: '22px',
-                  left: newAccountIsKid ? '30px' : '3px',
+                  height: '18px', width: '18px',
+                  left: newAccountIsKid ? '26px' : '3px',
                   bottom: '3px',
                   background: 'white',
                   borderRadius: '50%',
@@ -704,13 +703,13 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
             </label>
           </div>
 
-          <button style={buttonPrimaryStyle} onClick={handleCreateAccount}>
+          <button style={{ ...buttonPrimaryStyle, padding: '12px 24px', fontSize: '15px' }} onClick={handleCreateAccount}>
             Create Account
           </button>
 
           {accounts.length > 0 && (
             <button 
-              style={{ ...buttonSecondaryStyle, width: '100%', marginTop: '16px' }}
+              style={{ ...buttonSecondaryStyle, width: '100%', marginTop: '10px', padding: '10px 20px', fontSize: '14px' }}
               onClick={() => setStep('select')}
             >
               ← Back to Account Selection

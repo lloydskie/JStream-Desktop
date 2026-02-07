@@ -3,6 +3,7 @@ import { Box, Spinner } from '@chakra-ui/react';
 import { createPortal } from 'react-dom';
 import CustomSelect from './components/CustomSelect';
 import { fetchTMDB } from '../utils/tmdbClient';
+import { isSearchQueryBlocked, getKidsMode, containsBlockedWords } from '../utils/kidsFilter';
 
 type MediaItem = {
   id: number;
@@ -15,6 +16,7 @@ type MediaItem = {
   overview?: string | null;
   vote_average?: number | null;
   popularity?: number;
+  genre_ids?: number[];
 };
 
 const FILTER_CHIPS = [
@@ -27,6 +29,28 @@ const SORT_OPTIONS = [
   { value: 'popularity.desc', label: 'Most Popular' },
   { value: 'release_date.desc', label: 'Newest' },
   { value: 'release_date.asc', label: 'Oldest' },
+];
+
+const GENRE_LIST: { value: number; label: string }[] = [
+  { value: 28, label: 'Action' },
+  { value: 12, label: 'Adventure' },
+  { value: 16, label: 'Animation' },
+  { value: 35, label: 'Comedy' },
+  { value: 80, label: 'Crime' },
+  { value: 99, label: 'Documentary' },
+  { value: 18, label: 'Drama' },
+  { value: 10751, label: 'Family' },
+  { value: 14, label: 'Fantasy' },
+  { value: 36, label: 'History' },
+  { value: 27, label: 'Horror' },
+  { value: 10402, label: 'Music' },
+  { value: 9648, label: 'Mystery' },
+  { value: 10749, label: 'Romance' },
+  { value: 878, label: 'Science Fiction' },
+  { value: 10770, label: 'TV Movie' },
+  { value: 53, label: 'Thriller' },
+  { value: 10752, label: 'War' },
+  { value: 37, label: 'Western' },
 ];
 
 export default function SearchPage({ 
@@ -73,36 +97,10 @@ export default function SearchPage({
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewAnimating, setPreviewAnimating] = useState(false);
   
-  // Logo cache
-  const LOGO_CACHE_KEY = 'jstream:search_logo_cache_v1';
-  const logoCacheRef = useRef<Map<string, string>>(new Map());
-  const [logoMap, setLogoMap] = useState<Record<string, string>>({});
-  
   const loadMoreTriggerRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Load logo cache on mount
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(LOGO_CACHE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        for (const k of Object.keys(parsed || {})) {
-          logoCacheRef.current.set(k, parsed[k]);
-        }
-      }
-    } catch (e) {}
-  }, []);
-
-  function persistLogoCache() {
-    try {
-      const obj: Record<string, string> = {};
-      for (const [k, v] of Array.from(logoCacheRef.current.entries())) obj[k] = v;
-      sessionStorage.setItem(LOGO_CACHE_KEY, JSON.stringify(obj));
-    } catch (e) {}
-  }
 
   // Sorted results with client-side sorting
   const sortedResults = useMemo(() => {
@@ -120,13 +118,7 @@ export default function SearchPage({
     return results;
   }, [results, sort]);
 
-  // Enrich results with logos
-  const enrichedResults = useMemo(() => {
-    return sortedResults.map(item => ({
-      ...item,
-      logoPath: logoMap[`${item.media_type}:${item.id}`] || null
-    }));
-  }, [sortedResults, logoMap]);
+  const enrichedResults = sortedResults;
 
   useEffect(() => {
     if (typeof externalQuery !== 'undefined') {
@@ -145,7 +137,9 @@ export default function SearchPage({
       setResults([]); 
       setPage(1); 
       setHasMore(true);
-      if (!query || query.trim().length < 1) return;
+      // Allow genre-only browse (discover mode) even without a query
+      const canDiscover = genre && (mediaType === 'movie' || mediaType === 'tv');
+      if ((!query || query.trim().length < 1) && !canDiscover) return;
 
       loadPage(1, true);
       searchTimeoutRef.current = null;
@@ -201,6 +195,17 @@ export default function SearchPage({
 
   async function loadPage(p: number, replace = false) {
     if (!hasMore && !replace) return;
+
+    // Block the entire search if the query contains blocked words (kids mode)
+    if (isSearchQueryBlocked(query)) {
+      console.log('[KidsFilter] Search query blocked:', query);
+      setResults([]);
+      setHasMore(false);
+      setLoading(false);
+      setLoadingMore(false);
+      return;
+    }
+
     if (replace) {
       setLoading(true);
     } else {
@@ -209,19 +214,33 @@ export default function SearchPage({
     
     try {
       let res: any = null;
-      const params: Record<string, any> = { query, page: p, include_adult: false };
-      if (year) params['year'] = year;
-      
-      if (mediaType === 'movie') {
-        if (genre) params['with_genres'] = genre;
-        res = await fetchTMDB('search/movie', params);
-      } else if (mediaType === 'tv') {
-        if (genre) params['with_genres'] = genre;
-        res = await fetchTMDB('search/tv', params);
-      } else if (mediaType === 'person') {
-        res = await fetchTMDB('search/person', params);
+      const useDiscover = genre && !query.trim() && (mediaType === 'movie' || mediaType === 'tv');
+
+      if (useDiscover) {
+        // No search query but genre selected — use discover endpoint
+        const discoverParams: Record<string, any> = {
+          page: p,
+          include_adult: false,
+          with_genres: genre,
+          sort_by: sort,
+        };
+        if (year) {
+          discoverParams[mediaType === 'tv' ? 'first_air_date_year' : 'primary_release_year'] = year;
+        }
+        res = await fetchTMDB(`discover/${mediaType}`, discoverParams);
       } else {
-        res = await fetchTMDB('search/multi', params);
+        const params: Record<string, any> = { query, page: p, include_adult: false };
+        if (year) params['year'] = year;
+
+        if (mediaType === 'movie') {
+          res = await fetchTMDB('search/movie', params);
+        } else if (mediaType === 'tv') {
+          res = await fetchTMDB('search/tv', params);
+        } else if (mediaType === 'person') {
+          res = await fetchTMDB('search/person', params);
+        } else {
+          res = await fetchTMDB('search/multi', params);
+        }
       }
 
       if (!res || !res.results) {
@@ -255,16 +274,26 @@ export default function SearchPage({
           overview: it.overview || null,
           vote_average: it.vote_average || null,
           popularity: it.popularity || 0,
+          genre_ids: it.genre_ids || [],
         };
       });
+
+      // Client-side genre filter when using search endpoint with a genre selected
+      let filteredItems = items;
+      if (genre && query.trim() && (mediaType === 'movie' || mediaType === 'tv')) {
+        filteredItems = items.filter((it: any) => {
+          const genreIds: number[] = (it as any).genre_ids || [];
+          return genreIds.includes(Number(genre));
+        });
+      }
 
       setTotalPages(res.total_pages || 1);
       
       if (replace) {
-        setResults(items);
-        addToSearchHistory(query);
+        setResults(filteredItems);
+        if (query.trim()) addToSearchHistory(query);
       } else {
-        setResults(prev => [...prev, ...items]);
+        setResults(prev => [...prev, ...filteredItems]);
       }
       setHasMore((res.page || p) < (res.total_pages || 1));
       setPage(p);
@@ -286,7 +315,7 @@ export default function SearchPage({
 
   // Intersection observer for infinite scroll
   useEffect(() => {
-    if (!query.trim()) return;
+    if (!query.trim() && !genre) return;
     
     const observer = new IntersectionObserver(
       (entries) => {
@@ -308,72 +337,6 @@ export default function SearchPage({
       }
     };
   }, [query, hasMore, loadingMore, loading, loadMore]);
-
-  // Fetch logos in parallel batches
-  useEffect(() => {
-    if (sortedResults.length === 0) return;
-    
-    let mounted = true;
-    const BATCH_SIZE = 5;
-    
-    async function fetchLogos() {
-      const itemsNeedingLogos = sortedResults.filter(item => {
-        if (item.media_type === 'person') return false; // People don't have logos
-        const cacheKey = `${item.media_type}:${item.id}`;
-        return !logoCacheRef.current.has(cacheKey);
-      });
-      
-      for (let i = 0; i < itemsNeedingLogos.length; i += BATCH_SIZE) {
-        if (!mounted) break;
-        
-        const batch = itemsNeedingLogos.slice(i, i + BATCH_SIZE);
-        const promises = batch.map(async (item) => {
-          const cacheKey = `${item.media_type}:${item.id}`;
-          try {
-            const images = await fetchTMDB(`${item.media_type}/${item.id}/images`);
-            const logos = (images && (images as any).logos) || [];
-            if (Array.isArray(logos) && logos.length > 0) {
-              const eng = logos.find((l: any) => l.iso_639_1 === 'en') || logos[0];
-              if (eng && eng.file_path) {
-                logoCacheRef.current.set(cacheKey, eng.file_path);
-                return { key: cacheKey, path: eng.file_path };
-              }
-            }
-          } catch (e) {}
-          return null;
-        });
-        
-        const results = await Promise.all(promises);
-        if (!mounted) break;
-        
-        const newLogos: Record<string, string> = {};
-        results.forEach(r => {
-          if (r) newLogos[r.key] = r.path;
-        });
-        
-        if (Object.keys(newLogos).length > 0) {
-          setLogoMap(prev => ({ ...prev, ...newLogos }));
-          persistLogoCache();
-        }
-      }
-    }
-    
-    // Load cached logos first
-    const cachedLogos: Record<string, string> = {};
-    sortedResults.forEach(item => {
-      const cacheKey = `${item.media_type}:${item.id}`;
-      if (logoCacheRef.current.has(cacheKey)) {
-        cachedLogos[cacheKey] = logoCacheRef.current.get(cacheKey)!;
-      }
-    });
-    if (Object.keys(cachedLogos).length > 0) {
-      setLogoMap(prev => ({ ...prev, ...cachedLogos }));
-    }
-    
-    fetchLogos();
-    
-    return () => { mounted = false; };
-  }, [sortedResults]);
 
   // Preview modal handlers
   function pauseHero() {
@@ -492,10 +455,6 @@ export default function SearchPage({
     };
   }, []);
 
-  const genreOptions = (mediaType === 'tv' || mediaType === 'movie') 
-    ? (mediaType === 'tv' ? tvGenres : movieGenres) 
-    : [];
-
   return (
     <Box className="search-page">
       {/* Search Results Header */}
@@ -555,15 +514,15 @@ export default function SearchPage({
           flexWrap: 'wrap',
           alignItems: 'center'
         }}>
-          {(mediaType === 'movie' || mediaType === 'tv') && genreOptions.length > 0 && (
+          {(mediaType === 'movie' || mediaType === 'tv') && (
             <CustomSelect 
               id="genre" 
               value={genre as any} 
               onChange={(v) => setGenre(v ? Number(v) : '')} 
-              placeholder="All genres" 
+              placeholder="All Genres" 
               options={[
-                { value: '', label: 'All genres' }, 
-                ...(genreOptions || []).map((g: any) => ({ value: g.id, label: g.name }))
+                { value: '', label: 'All Genres' }, 
+                ...GENRE_LIST
               ]} 
             />
           )}
@@ -641,7 +600,7 @@ export default function SearchPage({
           </div>
         )}
         
-        {!loading && !query.trim() && (
+        {!loading && !query.trim() && !genre && (
           <div style={{ 
             padding: '48px', 
             textAlign: 'center', 
@@ -651,7 +610,7 @@ export default function SearchPage({
           </div>
         )}
 
-        {!loading && query.trim() && enrichedResults.length === 0 && (
+        {!loading && (query.trim() || genre) && enrichedResults.length === 0 && (
           <div style={{ 
             padding: '48px', 
             textAlign: 'center', 
@@ -663,31 +622,24 @@ export default function SearchPage({
 
         {!loading && enrichedResults.length > 0 && (
           <div 
-            className="search-results-grid" 
+            className="movie-grid" 
             style={{ 
-              display: 'grid', 
-              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', 
-              gap: '16px'
+              gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+              paddingBottom: 20
             }}
           >
             {enrichedResults.map((item, idx) => {
               const isPerson = item.media_type === 'person';
-              const backdropUrl = isPerson 
-                ? (item.profile_path ? `https://image.tmdb.org/t/p/w500${item.profile_path}` : undefined)
-                : (item.backdrop_path ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}` : undefined);
-              const logoUrl = (item as any).logoPath ? `https://image.tmdb.org/t/p/w300${(item as any).logoPath}` : undefined;
+              const posterUrl = isPerson
+                ? (item.profile_path ? `https://image.tmdb.org/t/p/w300${item.profile_path}` : undefined)
+                : (item.poster_path ? `https://image.tmdb.org/t/p/w300${item.poster_path}` : undefined);
               
               return (
                 <div 
                   key={`${item.media_type}-${item.id}`} 
-                  className="backdrop-card"
-                  style={{ 
-                    position: 'relative', 
-                    cursor: 'pointer', 
-                    borderRadius: '8px', 
-                    overflow: 'hidden', 
-                    aspectRatio: isPerson ? '2/3' : '16/9'
-                  }}
+                  className="movie-card"
+                  role="button"
+                  tabIndex={0}
                   onMouseEnter={(e) => { scheduleOpen(e, item, idx); }}
                   onMouseLeave={() => { scheduleClose(); }}
                   onClick={() => {
@@ -702,84 +654,28 @@ export default function SearchPage({
                     }
                   }}
                 >
-                  <div style={{ 
-                    position: 'absolute', 
-                    inset: 0, 
-                    background: backdropUrl ? `url(${backdropUrl})` : 'var(--card-bg)', 
-                    backgroundSize: 'cover', 
-                    backgroundPosition: 'center',
-                    filter: isPerson ? 'none' : 'brightness(0.7)'
-                  }} />
-                  
-                  {!isPerson && (
-                    <div style={{ 
-                      position: 'absolute', 
-                      inset: 0, 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center',
-                      background: 'linear-gradient(to top, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.5) 100%)'
-                    }}>
-                      {logoUrl ? (
-                        <img 
-                          src={logoUrl} 
-                          alt={item.title} 
-                          style={{ 
-                            maxWidth: '70%', 
-                            maxHeight: '60%', 
-                            objectFit: 'contain',
-                            filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.8))'
-                          }} 
-                        />
-                      ) : (
-                        <div style={{ 
-                          fontSize: '18px', 
-                          fontWeight: 700, 
-                          textAlign: 'center', 
-                          padding: '16px',
-                          color: 'white',
-                          textShadow: '0 2px 8px rgba(0,0,0,0.8)'
-                        }}>
-                          {item.title}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  
-                  {isPerson && (
-                    <div style={{ 
-                      position: 'absolute', 
-                      bottom: 0, 
-                      left: 0, 
-                      right: 0,
-                      padding: '12px',
-                      background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, transparent 100%)'
-                    }}>
-                      <div style={{ 
-                        fontSize: '16px', 
-                        fontWeight: 600, 
-                        color: 'white',
-                        textShadow: '0 2px 4px rgba(0,0,0,0.8)'
-                      }}>
-                        {item.title}
+                  <div className="movie-overlay">
+                    {posterUrl ? (
+                      <img className="movie-poster" src={posterUrl} alt={item.title} loading="lazy" />
+                    ) : (
+                      <div style={{ width: '100%', height: 240, background: '#222', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, color: '#888', fontSize: 13, textAlign: 'center', padding: 12 }}>
+                        {item.title || 'No Image'}
                       </div>
+                    )}
+                    <div className="play-overlay" onClick={(ev) => {
+                      ev.stopPropagation();
+                      if (isPerson && onSelectPerson) onSelectPerson(item.id);
+                      else if (item.media_type === 'collection' && onSelectCollection) onSelectCollection(item.id);
+                      else if (onSelectMovie) onSelectMovie(item.id, item.media_type === 'tv' ? 'tv' : 'movie');
+                    }}>
+                      <div className="play-circle"><div className="play-triangle" /></div>
                     </div>
-                  )}
-                  
-                  {/* Media type badge */}
-                  <div style={{
-                    position: 'absolute',
-                    top: '8px',
-                    right: '8px',
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    background: 'rgba(0,0,0,0.7)',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    color: 'white',
-                    textTransform: 'uppercase'
-                  }}>
-                    {item.media_type === 'tv' ? 'TV' : item.media_type === 'person' ? 'Person' : 'Movie'}
+                  </div>
+                  <div className="movie-info">
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{item.title}</div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)', textTransform: 'uppercase' }}>
+                      {item.media_type === 'tv' ? 'TV' : item.media_type === 'person' ? 'Person' : 'Movie'}
+                    </div>
                   </div>
                 </div>
               );
@@ -788,7 +684,7 @@ export default function SearchPage({
         )}
         
         {/* Infinite scroll trigger */}
-        {query.trim() && (
+        {(query.trim() || genre) && (
           <div 
             ref={loadMoreTriggerRef} 
             style={{ 

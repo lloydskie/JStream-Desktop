@@ -63,34 +63,39 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
         } else {
           let recentRawLocal: any = [];
           try {
-            if (db && typeof db.recentWatchesGet === 'function') {
+            // PREFER watchHistoryList() — it is already sorted by watched_at DESC
+            // so items appear in correct most-recently-watched order.
+            if (db && typeof db.watchHistoryList === 'function') {
+              const history = await db.watchHistoryList();
+              if (Array.isArray(history) && history.length > 0) {
+                // Deduplicate by item_id, keeping the first (most recent) occurrence
+                const seen = new Set<string>();
+                recentRawLocal = history.map((h: any) => {
+                  const itemIdRaw = h && h.item_id;
+                  const itemIdStr = String(itemIdRaw ?? '');
+                  if (!itemIdStr || seen.has(itemIdStr)) return null;
+                  seen.add(itemIdStr);
+                  if (itemIdStr.includes(':')) {
+                    const [type, idStr] = itemIdStr.split(':');
+                    return { id: Number(idStr), type: type || 'movie' };
+                  }
+                  return { id: Number(itemIdStr), type: 'movie' };
+                }).filter(Boolean);
+              }
+            }
+            // Fallback to recentWatchesGet() only if watchHistoryList had nothing
+            if ((!recentRawLocal || recentRawLocal.length === 0) && db && typeof db.recentWatchesGet === 'function') {
               const recentList = await db.recentWatchesGet();
               if (Array.isArray(recentList) && recentList.length > 0) {
                 recentRawLocal = recentList.map((id: number) => ({ id, type: null }));
               } else if (recentList && typeof recentList === 'object') {
+                // Merge movie/tv arrays preserving order from each list
                 const movieIds = Array.isArray(recentList.movie) ? recentList.movie : [];
                 const tvIds = Array.isArray(recentList.tv) ? recentList.tv : [];
                 const merged: any[] = [];
                 for (const id of movieIds) merged.push({ id: Number(id), type: 'movie' });
                 for (const id of tvIds) merged.push({ id: Number(id), type: 'tv' });
                 if (merged.length > 0) recentRawLocal = merged;
-              }
-            }
-            if (db && typeof db.watchHistoryList === 'function') {
-              const history = await db.watchHistoryList();
-              // Parse item_id like "movie:123" or just "123" into { id: 123, type: 'movie' }
-              if (!recentRawLocal || recentRawLocal.length === 0) {
-                recentRawLocal = history.map((h: any) => {
-                const itemIdRaw = h && h.item_id;
-                const itemIdStr = String(itemIdRaw ?? '');
-                if (!itemIdStr) return null;
-                if (itemIdStr.includes(':')) {
-                  const [type, idStr] = itemIdStr.split(':');
-                  return { id: Number(idStr), type: type || 'movie' };
-                }
-                // Assume movie if no type
-                return { id: Number(itemIdStr), type: 'movie' };
-                }).filter(Boolean);
               }
             }
           } catch (e) {
@@ -188,6 +193,11 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
             }
             console.log(`ContinueWatching: fetched ${type}/${id} successfully`);
             if (!mounted) break;
+            // If the kids filter blocked the item, skip it
+            if (!data) {
+              console.log(`ContinueWatching: ${type}/${id} blocked by kids filter — skipping`);
+              continue;
+            }
             const backdrop = data.backdrop_path || null;
             const poster = data.poster_path || null;
             // try to fetch logos (images endpoint) — prefer english
@@ -331,6 +341,8 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
 
   // Delete item from Continue Watching list
   async function handleDelete(id: number, type: 'movie' | 'tv', idx: number) {
+    // Remove from local state immediately (filter by id+type for robustness)
+    setItems(prev => prev.filter(it => !(it.id === id && it.type === type)));
     try {
       const db = (window as any).database;
       // Remove from watch history
@@ -341,12 +353,20 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
       if (db && typeof db.recentWatchesRemove === 'function') {
         await db.recentWatchesRemove(id, type);
       }
-      // Remove from local state
-      setItems(prev => prev.filter((_, i) => i !== idx));
+      // Also clear last_selected_movie personalization so the item
+      // doesn't reappear via the fallback loader on fresh profiles
+      if (db && typeof db.getPersonalization === 'function') {
+        try {
+          const lastMovie = await db.getPersonalization('last_selected_movie');
+          if (lastMovie && String(lastMovie) === String(id)) {
+            if (typeof db.setPersonalization === 'function') {
+              await db.setPersonalization('last_selected_movie', '');
+            }
+          }
+        } catch (e) { /* ignore */ }
+      }
     } catch (e) {
       console.error('Failed to delete item:', e);
-      // Still remove from local state even if DB operation fails
-      setItems(prev => prev.filter((_, i) => i !== idx));
     }
   }
 
@@ -624,8 +644,10 @@ export default function ContinueWatching({ onPlay, onSelect }: { onPlay?: (id:nu
                       setShowPreviewModal(false);
                       setHoverIndex(null);
                       setHoverTrailerKey(null);
-                      // Then delete the item
-                      await handleDelete(it.id, it.type, idx);
+                      // Guard: ensure item exists before deleting
+                      if (it && it.id != null && it.type) {
+                        await handleDelete(it.id, it.type, idx);
+                      }
                     }}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     </button>

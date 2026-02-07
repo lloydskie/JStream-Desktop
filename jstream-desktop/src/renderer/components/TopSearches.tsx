@@ -70,6 +70,8 @@ export default function TopSearches({ onPlay, onSelect }: { onPlay?: (id:number|
           const type = entry.type || 'movie';
           try {
             const data = await fetchTMDB(`${type}/${id}`);
+            // If the kids filter blocked the item, skip it
+            if (!data) continue;
             const backdrop = data.backdrop_path || null;
             const poster = data.poster_path || null;
             let logoPath: string | null = null;

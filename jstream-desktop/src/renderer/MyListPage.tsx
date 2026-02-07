@@ -43,6 +43,8 @@ export default function MyListPage({ onPlay, onSelect }: { onPlay?: (id:number|s
           data = await fetchTMDB(`tv/${id}`);
         }
       }
+      // If the kids filter blocked the item, return null
+      if (!data) return null;
       const backdrop = data.backdrop_path || null;
       const poster = data.poster_path || null;
       let logoPath: string | null = null;
@@ -318,6 +320,18 @@ export default function MyListPage({ onPlay, onSelect }: { onPlay?: (id:number|s
       // Try to remove from favorites
       if (db && typeof db.favoritesRemove === 'function') {
         await db.favoritesRemove(String(id), type);
+      }
+      // Clear last_selected_movie personalization so the item
+      // doesn't reappear via the Continue Watching fallback
+      if (db && typeof db.getPersonalization === 'function') {
+        try {
+          const lastMovie = await db.getPersonalization('last_selected_movie');
+          if (lastMovie && String(lastMovie) === String(id)) {
+            if (typeof db.setPersonalization === 'function') {
+              await db.setPersonalization('last_selected_movie', '');
+            }
+          }
+        } catch (e) { /* ignore */ }
       }
       // Remove from all local states
       const filterFn = (item: any) => !(item.id === id && item.type === type);

@@ -50,21 +50,25 @@ export default function DetailsModal({ tmdbId, itemTypeHint, onPlay, onSelect, o
       try {
         if (itemTypeHint === 'tv') {
           const tv = await fetchTMDB(`tv/${tmdbId}`);
+          if (!tv) { setItem(null); setLoading(false); return; }
           setItem(tv);
           setItemType('tv');
           setSeasons(tv.seasons || []);
         } else if (itemTypeHint === 'movie') {
           const mv = await fetchTMDB(`movie/${tmdbId}`);
+          if (!mv) { setItem(null); setLoading(false); return; }
           setItem(mv);
           setItemType('movie');
         } else {
           try {
             const tv = await fetchTMDB(`tv/${tmdbId}`);
+            if (!tv) throw new Error('blocked');
             setItem(tv);
             setItemType('tv');
             setSeasons(tv.seasons || []);
           } catch (tvErr) {
             const mv = await fetchTMDB(`movie/${tmdbId}`);
+            if (!mv) { setItem(null); setLoading(false); return; }
             setItem(mv);
             setItemType('movie');
           }
@@ -514,7 +518,7 @@ export default function DetailsModal({ tmdbId, itemTypeHint, onPlay, onSelect, o
           <div className="details-modal-inner">
           {/* Use a cloned DetailsHero component so the modal can adjust hero behavior/styles independently */}
           {item && (
-            <DetailsHero movie={item} onPlay={(id, t) => onPlay && onPlay(id, t as any)} onMore={() => { /* no-op in modal */ }} fullBleed={false} isModalOpen={true} isVisible={true} mediaType={itemType} />
+            <DetailsHero movie={item} onPlay={(id, t) => onPlay && onPlay(id, t as any)} onMore={() => { /* no-op in modal */ }} fullBleed={false} isModalOpen={true} isVisible={true} mediaType={itemType} onGoToCollections={onGoToCollections} />
           )}
 
           <div className="detail-sections">

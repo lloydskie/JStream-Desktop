@@ -4,8 +4,9 @@ import { fetchTMDB } from '../../utils/tmdbClient';
 import PlusMinusIcon from './icons/PlusMinusIcon';
 import InfoIcon from './icons/InfoIcon';
 import SpeakerIcon from './icons/SpeakerIcon';
+import CollectionIcon from './icons/CollectionIcon';
 
-export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOpen, isVisible = true, mediaType = 'movie' }: { movie?: any, onPlay?: (id:number, type?:'movie'|'tv')=>void, onMore?: (id:number, type?:'movie'|'tv')=>void, fullBleed?: boolean, isModalOpen?: boolean, isVisible?: boolean, mediaType?: 'movie'|'tv' }) {
+export default function HeroBanner({ movie, onPlay, onMore, onGoToCollections, fullBleed, isModalOpen, isVisible = true, mediaType = 'movie' }: { movie?: any, onPlay?: (id:number, type?:'movie'|'tv')=>void, onMore?: (id:number, type?:'movie'|'tv')=>void, onGoToCollections?: (collectionId?: number)=>void, fullBleed?: boolean, isModalOpen?: boolean, isVisible?: boolean, mediaType?: 'movie'|'tv' }) {
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [trailerError, setTrailerError] = useState<string | null>(null);
 
@@ -116,6 +117,33 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
   const interactionTimer = useRef<number | null>(null);
   const heroRef = useRef<HTMLDivElement | null>(null);
   const [mutePos, setMutePos] = useState<{ top: number; right?: number; left?: number } | null>(null);
+  const [collectionInfo, setCollectionInfo] = useState<{ id: number; name: string } | null>(null);
+
+  // Fetch collection info for the featured movie
+  useEffect(() => {
+    let mounted = true;
+    setCollectionInfo(null);
+    if (!movie?.id) return;
+    (async () => {
+      try {
+        // movie may already have belongs_to_collection from a full details fetch
+        if (movie.belongs_to_collection) {
+          if (mounted) setCollectionInfo({ id: movie.belongs_to_collection.id, name: movie.belongs_to_collection.name });
+          return;
+        }
+        const details = await fetchTMDB(`movie/${movie.id}`);
+        if (!mounted) return;
+        if (details && details.belongs_to_collection) {
+          setCollectionInfo({ id: details.belongs_to_collection.id, name: details.belongs_to_collection.name });
+        }
+      } catch (e) { /* ignore */ }
+    })();
+    return () => { mounted = false; };
+  }, [movie?.id]);
+
+  // Track whether the hero banner is in the viewport. When false the trailer
+  // iframe is removed from the DOM entirely so it cannot keep playing audio.
+  const [isInView, setIsInView] = useState(true);
 
   // logo URL state — attempt to fetch images from the appropriate endpoint and fallback
   const [logoUrl, setLogoUrl] = useState<string | null>(movie?.logo_path ? `https://image.tmdb.org/t/p/original${movie.logo_path}` : null);
@@ -156,7 +184,7 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
 
   // when trailerKey appears, consider trailer 'playing' after a short delay and collapse overview
   useEffect(() => {
-    if (trailerKey && !pausedExternally) {
+    if (trailerKey && !pausedExternally && isInView) {
       // small delay to allow iframe autoplay to start
       const t = window.setTimeout(() => {
         setIsPlaying(true);
@@ -167,71 +195,30 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
       setIsPlaying(false);
       setOverviewExpanded(true);
     }
-  }, [trailerKey, pausedExternally]);
+  }, [trailerKey, pausedExternally, isInView]);
 
-  // Pause/resume trailer when hero scrolls out of view (do not override external pauses)
+  // Track hero visibility — when the hero scrolls out of view the trailer
+  // iframe is unmounted entirely (see render below) so it cannot leak audio.
+  // When it scrolls back in, the iframe re-mounts with autoplay.
   useEffect(() => {
-    if (!heroRef.current || !trailerKey) return;
-    let mounted = true;
-    const pausedByVisibility = { value: false };
-
-    const handlePause = () => {
-      if (pausedByVisibility.value) return;
-      pausedByVisibility.value = true;
-      setIsPlaying(false);
-      try {
-        const els = Array.from(document.querySelectorAll('.hero-trailer iframe')) as HTMLIFrameElement[];
-        for (const el of els) {
-          try {
-            if (!el || !el.contentWindow) continue;
-            if (String(trailerKey).startsWith('vimeo:')) {
-              el.contentWindow.postMessage(JSON.stringify({ method: 'pause' }), '*');
-            } else {
-              el.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
-            }
-          } catch (e) { /* ignore per-iframe */ }
-        }
-      } catch (e) { /* ignore */ }
-    };
-
-    const handleResume = () => {
-      // Do not resume visibility-driven playback while a details modal is open
-      if (isHeroModalOpen()) return;
-      if (!pausedByVisibility.value) return;
-      pausedByVisibility.value = false;
-      // Only resume if not paused externally by previews or other controllers
-      if (mounted && !pausedExternally) {
-        try {
-          const els = Array.from(document.querySelectorAll('.hero-trailer iframe')) as HTMLIFrameElement[];
-          for (const el of els) {
-            try {
-              if (!el || !el.contentWindow) continue;
-              if (String(trailerKey).startsWith('vimeo:')) {
-                el.contentWindow.postMessage(JSON.stringify({ method: 'play' }), '*');
-              } else {
-                el.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
-              }
-            } catch (e) { /* ignore per-iframe */ }
-          }
-        } catch (e) { /* ignore */ }
-        setIsPlaying(true);
-      }
-    };
+    const el = heroRef.current;
+    if (!el) return;
 
     const obs = new IntersectionObserver((entries) => {
       for (const entry of entries) {
-        // if less than 20% visible, consider it out of view
-        if (entry.intersectionRatio < 0.2) {
-          handlePause();
+        // Less than 15% visible → out of view
+        if (entry.intersectionRatio < 0.15) {
+          setIsInView(false);
+          setIsPlaying(false);
         } else {
-          handleResume();
+          setIsInView(true);
         }
       }
-    }, { threshold: [0, 0.2, 0.5, 1] });
+    }, { threshold: [0, 0.15, 0.5, 1] });
 
-    try { obs.observe(heroRef.current); } catch (e) { /* ignore */ }
-    return () => { mounted = false; try { obs.disconnect(); } catch (e) {} };
-  }, [heroRef.current, trailerKey, pausedExternally]);
+    try { obs.observe(el); } catch (e) { /* ignore */ }
+    return () => { try { obs.disconnect(); } catch (e) {} };
+  }, [heroRef.current]);
 
   // Expose a global trailer controller so other components can pause/resume the hero trailer
   useEffect(() => {
@@ -452,8 +439,11 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
   const jsx = (
     <section ref={heroRef as any} className={"hero-banner" + (fullBleed ? ' full-bleed' : '') + (isPlaying ? ' playing' : '')} style={{backgroundImage: `url(${backdrop})`, display: isVisible ? 'block' : 'none'}}>
       {/* autoplaying, muted trailer placed behind the hero content */}
-      <div className="hero-trailer" aria-hidden={!trailerKey}>
-        {trailerKey && (
+      {/* Trailer iframe is only rendered when the hero is in the viewport
+           AND not externally paused. Removing the iframe from the DOM is the
+           most reliable way to guarantee no audio leaks when scrolled away. */}
+      <div className="hero-trailer" aria-hidden={!trailerKey || !isInView}>
+        {trailerKey && isInView && !pausedExternally && (
           (typeof trailerKey === 'string' && trailerKey.startsWith('vimeo:')) ? (
             (() => {
               const vimeoId = String(trailerKey).replace('vimeo:', '');
@@ -537,6 +527,18 @@ export default function HeroBanner({ movie, onPlay, onMore, fullBleed, isModalOp
             <InfoIcon size={16} color="#fff" />
             <span>More Info</span>
           </button>
+
+          {collectionInfo && onGoToCollections && (
+            <button
+              className="collection-btn"
+              onClick={() => onGoToCollections(collectionInfo.id)}
+              aria-label={`View ${collectionInfo.name}`}
+              title={collectionInfo.name}
+            >
+              <CollectionIcon size={16} color="#fff" />
+              <span>Collection</span>
+            </button>
+          )}
 
           
         </div>

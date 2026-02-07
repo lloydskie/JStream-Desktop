@@ -30,6 +30,7 @@ import {
   saveAvatarImage,
   loadAvatarImage,
   resetPinWithRecovery,
+  isCurrentAccountKid,
   // User-scoped database functions
   setPersonalization as setUserPersonalization,
   getPersonalization as getUserPersonalization,
@@ -159,6 +160,78 @@ ipcMain.handle('accounts-load-avatar', async (event, accountId: string) => {
 
 ipcMain.handle('accounts-reset-pin', async (event, accountId: string, recoveryPin: string, newPin: string) => {
   return resetPinWithRecovery(accountId, recoveryPin, newPin);
+});
+
+// ───────────────────────────────────────────────────────────────────
+// Kids Content Filter — TMDB Daily Adult ID Exports
+// ───────────────────────────────────────────────────────────────────
+// In-memory cache of adult IDs so we only download once per session
+let _cachedAdultMovieIds: number[] | null = null;
+let _cachedAdultTvIds: number[] | null = null;
+
+// Helper: download a TMDB daily export .json.gz NDJSON file and return an array of IDs
+async function downloadAdultIds(mediaPrefix: string): Promise<number[]> {
+  const now = new Date();
+  const tryDays = 90;
+  for (let i = 0; i < tryDays; i++) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
+    const ds = `${String(d.getUTCMonth() + 1).padStart(2, '0')}_${String(d.getUTCDate()).padStart(2, '0')}_${d.getUTCFullYear()}`;
+    const url = `https://files.tmdb.org/p/exports/${mediaPrefix}_${ds}.json.gz`;
+    try {
+      const ids = await new Promise<number[]>((resolve, reject) => {
+        https.get(url, (res) => {
+          if (res.statusCode !== 200) { res.resume(); return reject(new Error(`HTTP ${res.statusCode}`)); }
+          const gunzip = zlib.createGunzip();
+          const readline = require('readline');
+          const rl = readline.createInterface({ input: res.pipe(gunzip), crlfDelay: Infinity });
+          const collected: number[] = [];
+          rl.on('line', (line: string) => {
+            if (!line) return;
+            try {
+              const obj = JSON.parse(line);
+              if (obj && typeof obj.id === 'number') collected.push(obj.id);
+            } catch (e) { /* skip malformed lines */ }
+          });
+          rl.on('close', () => resolve(collected));
+          rl.on('error', (err: any) => reject(err));
+          gunzip.on('error', (err: any) => reject(err));
+        }).on('error', reject);
+      });
+      if (ids.length > 0) {
+        console.log(`Kids filter: loaded ${ids.length} adult IDs from ${mediaPrefix} (${ds})`);
+        return ids;
+      }
+    } catch (e) {
+      // try older dates
+    }
+  }
+  console.warn(`Kids filter: could not load adult IDs for ${mediaPrefix} after ${tryDays} days`);
+  return [];
+}
+
+// IPC: check if current account is a Kids profile
+ipcMain.handle('kids-filter-isKid', async () => {
+  return isCurrentAccountKid();
+});
+
+// IPC: download and return adult IDs from TMDB daily exports
+ipcMain.handle('kids-filter-getAdultIds', async () => {
+  try {
+    // Use cache to avoid re-downloading every time
+    if (_cachedAdultMovieIds === null) {
+      _cachedAdultMovieIds = await downloadAdultIds('adult_movie_ids');
+    }
+    if (_cachedAdultTvIds === null) {
+      _cachedAdultTvIds = await downloadAdultIds('adult_tv_series_ids');
+    }
+    return {
+      movieIds: _cachedAdultMovieIds,
+      tvIds: _cachedAdultTvIds,
+    };
+  } catch (e) {
+    console.error('kids-filter-getAdultIds error', e);
+    return { movieIds: [], tvIds: [] };
+  }
 });
 
 // Open external URL in default browser
@@ -619,10 +692,13 @@ ipcMain.handle('open-player-window', async (event, urlString: string) => {
     const win = new BrowserWindow({
       width: 1100,
       height: 700,
+      autoHideMenuBar: true,
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
       },
     });
+    // Remove the menu bar entirely so the window is plain
+    win.setMenu(null);
 
     // Disable DevTools for player windows
     win.webContents.on('devtools-opened', () => {

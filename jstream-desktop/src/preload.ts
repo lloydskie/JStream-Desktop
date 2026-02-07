@@ -120,6 +120,12 @@ contextBridge.exposeInMainWorld('accounts', {
     ipcRenderer.invoke('accounts-reset-pin', accountId, recoveryPin, newPin),
 });
 
+// Kids content filter API
+contextBridge.exposeInMainWorld('kidsFilter', {
+  isKid: () => ipcRenderer.invoke('kids-filter-isKid'),
+  getAdultIds: () => ipcRenderer.invoke('kids-filter-getAdultIds'),
+});
+
 contextBridge.exposeInMainWorld('openExternal', {
   url: (u: string) => ipcRenderer.invoke('open-external-url', u),
 });
