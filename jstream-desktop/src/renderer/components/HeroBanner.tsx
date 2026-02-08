@@ -197,6 +197,35 @@ export default function HeroBanner({ movie, onPlay, onMore, onGoToCollections, f
     }
   }, [trailerKey, pausedExternally, isInView]);
 
+  // When a modal opens (isModalOpen becomes true), immediately pause the
+  // trailer and remove the trailerKey so the iframe is unmounted.
+  // This covers the case where a trailer was already loaded and playing
+  // before the modal opened (the initial fetch effect only prevents *new*
+  // trailer loads, it doesn't pause an already-playing one).
+  useEffect(() => {
+    if (isModalOpen) {
+      setTrailerKey(null);
+      setPausedExternally(true);
+      setIsPlaying(false);
+      // Send stop/pause to any lingering iframes (belt & suspenders)
+      try {
+        const els = Array.from(document.querySelectorAll('.hero-trailer iframe')) as HTMLIFrameElement[];
+        for (const el of els) {
+          try {
+            if (!el || !el.contentWindow) continue;
+            const src = String(el.src || '');
+            if (src.includes('player.vimeo')) {
+              el.contentWindow.postMessage(JSON.stringify({ method: 'pause' }), '*');
+            } else {
+              el.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+              el.contentWindow.postMessage('{"event":"command","func":"stopVideo","args":""}', '*');
+            }
+          } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
+    }
+  }, [isModalOpen]);
+
   // Track hero visibility — when the hero scrolls out of view the trailer
   // iframe is unmounted entirely (see render below) so it cannot leak audio.
   // When it scrolls back in, the iframe re-mounts with autoplay.

@@ -463,6 +463,7 @@ const createWindow = () => {
     height: 600,
     minWidth: 768,
     minHeight: 600,
+    icon: path.join(app.getAppPath(), 'assets', 'images', 'icon.png'),
     frame: false, // Remove default title bar
     show: false, // Don't show until ready to prevent flash
     webPreferences: {

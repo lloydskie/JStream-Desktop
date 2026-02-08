@@ -13,13 +13,17 @@ const config: ForgeConfig = {
     asar: false,
     prune: false,
     ignore: false,
+    icon: path.resolve(__dirname, 'assets', 'images', 'icon'),
     files: ['**/*', 'node_modules/better-sqlite3/**'],
   },
   rebuildConfig: {
     buildFromSource: ['better-sqlite3'],
   },
   makers: [
-    new MakerSquirrel({}),
+    new MakerSquirrel({
+      iconUrl: 'file://' + path.resolve(__dirname, 'assets', 'images', 'icon.ico').replace(/\\/g, '/'),
+      setupIcon: path.resolve(__dirname, 'assets', 'images', 'icon.ico'),
+    }),
     new MakerZIP({}, ['darwin']),
     new MakerRpm({}),
     new MakerDeb({}),

@@ -563,6 +563,9 @@ export default function App() {
     // the player modal can appear above it. DetailsModal checks
     // `window.__suppressHeroResume` and will skip resuming the page hero.
     try { (window as any).__suppressHeroResume = true; } catch (e) { /* ignore */ }
+    // Keep __heroModalOpen true so the trailer controller blocks any resume
+    // attempts during the transition from details modal to player modal.
+    try { (window as any).__heroModalOpen = true; } catch (e) { /* ignore */ }
     try { if (detailsModalOpen) setDetailsModalOpen(false); } catch (e) { /* ignore */ }
     setSelectedTmdbId(Number(idStr) || null);
     setPlayerType(type);
@@ -598,7 +601,9 @@ export default function App() {
     setPlayerModalOpen(true);
     try { (window as any).database.setPersonalization('last_selected_movie', idStr); } catch(e) { /* ignore */ }
     // Allow DetailsModal cleanup to finish without suppressing future resumes.
-    try { delete (window as any).__suppressHeroResume; } catch (e) { /* ignore */ }
+    // Defer the delete so React has time to commit the unmount and run the
+    // DetailsModal cleanup effect (which checks __suppressHeroResume).
+    try { setTimeout(() => { try { delete (window as any).__suppressHeroResume; } catch (e) { /* ignore */ } }, 500); } catch (e) { /* ignore */ }
     // Save to watch history when starting to play
     try { (window as any).database.watchHistorySet(historyKey, 0); } catch(e) { console.error('watchHistorySet on play failed', e); }
     try { (window as any).database.recentWatchesAdd(historyKey); } catch(e) { /* ignore */ }
@@ -647,6 +652,14 @@ export default function App() {
         }
         if (detailsModalOpen) {
           setDetailsModalOpen(false);
+          // Manually clear modal flag and resume hero trailer since the
+          // DetailsModal onClose callback won't fire when we close via state.
+          try { (window as any).__heroModalOpen = false; } catch (e) { /* ignore */ }
+          try {
+            const ctrl = (window as any).__appTrailerController;
+            if (ctrl && typeof ctrl.resume === 'function') ctrl.resume();
+            else window.dispatchEvent(new CustomEvent('app:resume-hero-trailer'));
+          } catch (e) { try { window.dispatchEvent(new CustomEvent('app:resume-hero-trailer')); } catch (e2) { /* ignore */ } }
           return;
         }
         if (isFullscreen) {
@@ -884,7 +897,7 @@ export default function App() {
             )}
             <ChakraProvider value={defaultSystem}>
               <ErrorBoundary>
-                {featuredMovie && <HeroBanner movie={featuredMovie} onPlay={handlePlayMovie} onMore={handleSelectMovie} onGoToCollections={handleGoToCollections} fullBleed isModalOpen={playerModalOpen || activeIndex === 10} isVisible={activeIndex === 0} />}
+                {featuredMovie && <HeroBanner movie={featuredMovie} onPlay={handlePlayMovie} onMore={handleSelectMovie} onGoToCollections={handleGoToCollections} fullBleed isModalOpen={playerModalOpen || detailsModalOpen || activeIndex === 10} isVisible={activeIndex === 0} />}
                 <Tabs index={activeIndex} onChange={index => setActiveIndex(index)} isFitted variant="enclosed" isLazy lazyBehavior="unmount" style={{width: '100%'}}>
 
                           {/* Header is portaled to #header-root so it can overlay the full-bleed hero without being constrained */}
