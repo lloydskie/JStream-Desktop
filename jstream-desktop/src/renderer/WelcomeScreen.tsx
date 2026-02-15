@@ -227,27 +227,32 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
     {
       icon: '🎬',
       title: 'Stream Movies & TV Shows',
-      description: 'Access thousands of movies and TV shows from various sources. Watch your favorites anytime, anywhere.'
-    },
-    {
-      icon: '🔒',
-      title: 'Private & Secure',
-      description: 'Each account has its own separate database. Your watch history, favorites, and preferences are completely private.'
-    },
-    {
-      icon: '👨‍👩‍👧‍👦',
-      title: 'Multiple Profiles',
-      description: 'Create profiles for each family member. Kids profiles have parental controls built-in.'
-    },
-    {
-      icon: '📱',
-      title: 'Personalized Experience',
-      description: 'Get recommendations based on your viewing history. Your data never mixes with other accounts.'
+      description: 'Access thousands of movies and TV shows with multiple player options — Aether, Boreal, Cygnus, and Draco. Switch players instantly if one doesn\'t load.'
     },
     {
       icon: '🛡️',
-      title: 'PIN Protected',
-      description: 'Secure your account with a PIN. Only you can access your personalized content.'
+      title: 'Built-in Ad Blocker',
+      description: 'Enjoy an ad-free experience with a powerful built-in ad blocker. No pop-ups, no interruptions — just pure streaming.'
+    },
+    {
+      icon: '📺',
+      title: 'Smart TV Episode Memory',
+      description: 'JStream remembers exactly where you left off. Your last season and episode are saved automatically so you can pick up right where you stopped.'
+    },
+    {
+      icon: '👨‍👩‍👧‍👦',
+      title: 'Multi-Profile with Kids Mode',
+      description: 'Create separate profiles for every family member. Kids profiles get built-in parental controls that filter out adult content automatically.'
+    },
+    {
+      icon: '🔒',
+      title: '100% Private & Offline',
+      description: 'All your data stays on your device — no cloud, no tracking, no data collection. Each profile has its own encrypted database.'
+    },
+    {
+      icon: '⌨️',
+      title: 'Keyboard Shortcuts',
+      description: 'Navigate like a pro with shortcuts: F11 for fullscreen, Ctrl+K to search, Ctrl+R to reload, Escape to close modals, and B to go home.'
     }
   ];
 
@@ -735,10 +740,12 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
             <div style={{ background: '#1f2937', padding: '16px', borderRadius: '12px' }}>
               <p style={{ fontWeight: 600, marginBottom: '8px', color: '#dc2626' }}>✨ Key Features:</p>
               <ul style={{ paddingLeft: '20px', lineHeight: 1.8 }}>
-                <li><strong>Ad-Free</strong> – Uninterrupted viewing experience</li>
+                <li><strong>Ad-Free</strong> – Built-in ad blocker for uninterrupted viewing</li>
                 <li><strong>No VPN Required</strong> – Stream directly without hassle</li>
                 <li><strong>100% Private</strong> – Your data stays on your device</li>
-                <li><strong>Multiple Profiles</strong> – Each user gets their own space</li>
+                <li><strong>Multiple Players</strong> – 4 player options to choose from</li>
+                <li><strong>Episode Memory</strong> – Remembers your last TV episode</li>
+                <li><strong>Kids Mode</strong> – Built-in parental controls per profile</li>
               </ul>
             </div>
           </div>
@@ -779,19 +786,31 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
         content: (
           <div style={{ textAlign: 'left' }}>
             <p style={{ marginBottom: '16px', lineHeight: 1.7 }}>
-              Getting started is easy:
+              Getting started is easy — follow these steps:
             </p>
             <ol style={{ paddingLeft: '20px', lineHeight: 2.2 }}>
               <li><strong>Browse</strong> – Scroll through the homepage or use tabs to find content</li>
-              <li><strong>Search</strong> – Click the search icon (🔍) or press <kbd style={{ background: '#374151', padding: '2px 8px', borderRadius: '4px', fontSize: '12px' }}>Ctrl+K</kbd> to search</li>
+              <li><strong>Search</strong> – Press <kbd style={{ background: '#374151', padding: '2px 8px', borderRadius: '4px', fontSize: '12px' }}>Ctrl+K</kbd> or click 🔍 to search by title</li>
               <li><strong>Select</strong> – Click on any movie or show to see details</li>
-              <li><strong>Play</strong> – Click the Play button to start watching</li>
-              <li><strong>Switch Players</strong> – If one player doesn't work, try another (Aether, Boreal, Cygnus, Draco)</li>
+              <li><strong>Play</strong> – Hit the Play button to start watching</li>
+              <li><strong>Switch Players</strong> – Use the player tabs (Aether, Boreal, Cygnus, Draco) if one doesn't load</li>
             </ol>
-            <div style={{ background: '#1f2937', padding: '12px', borderRadius: '8px', marginTop: '12px' }}>
-              <p style={{ fontSize: '13px', color: '#9ca3af' }}>
-                💡 <strong>Tip:</strong> For TV shows, select your season and episode from the player controls after starting playback.
-              </p>
+            <div style={{ display: 'grid', gap: '8px', marginTop: '12px' }}>
+              <div style={{ background: '#1f2937', padding: '12px', borderRadius: '8px' }}>
+                <p style={{ fontSize: '13px', color: '#9ca3af' }}>
+                  📺 <strong>TV Shows:</strong> After clicking Play, select your season and episode from the dropdowns. JStream remembers where you left off!
+                </p>
+              </div>
+              <div style={{ background: '#1f2937', padding: '12px', borderRadius: '8px' }}>
+                <p style={{ fontSize: '13px', color: '#9ca3af' }}>
+                  🔄 <strong>Player not loading?</strong> Try switching to a different player using the tabs above the video. Each player uses a different source.
+                </p>
+              </div>
+              <div style={{ background: '#1f2937', padding: '12px', borderRadius: '8px' }}>
+                <p style={{ fontSize: '13px', color: '#9ca3af' }}>
+                  🔃 <strong>Something stuck?</strong> Press <kbd style={{ background: '#374151', padding: '2px 6px', borderRadius: '4px', fontSize: '11px' }}>Ctrl+R</kbd> to reload the app at any time.
+                </p>
+              </div>
             </div>
           </div>
         )
@@ -809,6 +828,7 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
                 { keys: 'F11', action: 'Toggle fullscreen mode' },
                 { keys: 'Escape', action: 'Exit fullscreen / Close modals' },
                 { keys: 'Ctrl + K', action: 'Open search' },
+                { keys: 'Ctrl + R', action: 'Reload the app' },
                 { keys: 'B', action: 'Go back to Home' },
               ].map((shortcut, idx) => (
                 <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#1f2937', padding: '12px 16px', borderRadius: '8px' }}>
@@ -819,7 +839,7 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
             </div>
             <div style={{ background: '#1f2937', padding: '12px', borderRadius: '8px', marginTop: '16px' }}>
               <p style={{ fontSize: '13px', color: '#9ca3af' }}>
-                💡 <strong>Tip:</strong> Hover near the top of the screen while in fullscreen to reveal the exit bar.
+                💡 <strong>Tip:</strong> These shortcuts work globally — no need to click anywhere first. Single-key shortcuts (like B) are disabled while you're typing in a text field.
               </p>
             </div>
           </div>
@@ -835,11 +855,12 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
             </p>
             <div style={{ display: 'grid', gap: '12px' }}>
               {[
-                { title: 'Edit Profile', desc: 'Change your name and avatar', icon: '👤' },
+                { title: 'Edit Profile', desc: 'Change your name, avatar, or upload a photo', icon: '👤' },
                 { title: 'Change PIN', desc: 'Update your login PIN anytime', icon: '🔐' },
                 { title: 'My List', desc: 'View and manage your saved favorites', icon: '❤️' },
                 { title: 'Watch History', desc: 'See what you\'ve watched recently', icon: '📜' },
-                { title: 'About', desc: 'App info and developer details', icon: 'ℹ️' },
+                { title: 'Kids Mode', desc: 'Enable parental controls on any profile', icon: '👶' },
+                { title: 'Switch Profile', desc: 'Log out and switch to another profile', icon: '🔄' },
               ].map((item, idx) => (
                 <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: '#1f2937', padding: '12px', borderRadius: '8px' }}>
                   <span style={{ fontSize: '20px' }}>{item.icon}</span>
@@ -863,10 +884,12 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
             </p>
             <div style={{ display: 'grid', gap: '12px', textAlign: 'left' }}>
               {[
-                { icon: '🔒', text: 'Your data stays private on your device' },
+                { icon: '🔒', text: 'Your data stays private — everything is stored locally' },
                 { icon: '📋', text: 'Keep your Recovery PIN safe for account recovery' },
-                { icon: '🎬', text: 'Try different players if one doesn\'t work' },
-                { icon: '❤️', text: 'Add favorites by clicking the heart icon' },
+                { icon: '🎬', text: 'Try different players (Aether, Boreal, Cygnus, Draco) if one doesn\'t work' },
+                { icon: '📺', text: 'TV progress is saved — JStream remembers your last episode' },
+                { icon: '❤️', text: 'Add favorites by clicking the heart icon on any title' },
+                { icon: '🔃', text: 'Press Ctrl+R to reload if anything gets stuck' },
               ].map((item, idx) => (
                 <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: '#1f2937', padding: '14px 16px', borderRadius: '8px' }}>
                   <span style={{ fontSize: '24px' }}>{item.icon}</span>

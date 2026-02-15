@@ -6,7 +6,7 @@ import HeroBanner from './components/HeroBanner';
 import GenreGridCard from './components/GenreGridCard';
 import { filterGenresForKids } from '../utils/kidsFilter';
 
-export default function MoviesPage({ genres: rawGenres = [], onSelectMovie, onPlayMovie }: { genres?: any[], onSelectMovie?: (id:number, type?:'movie'|'tv')=>void, onPlayMovie?: (id:number|string, type?:'movie'|'tv', params?:Record<string,any>)=>void }) {
+export default function MoviesPage({ genres: rawGenres = [], onSelectMovie, onPlayMovie, isModalOpen }: { genres?: any[], onSelectMovie?: (id:number, type?:'movie'|'tv')=>void, onPlayMovie?: (id:number|string, type?:'movie'|'tv', params?:Record<string,any>)=>void, isModalOpen?: boolean }) {
   const genres = filterGenresForKids(rawGenres);
   const [overview, setOverview] = useState<Record<number, any[]>>({});
   const [loadingMap, setLoadingMap] = useState<Record<number, boolean>>({});
@@ -154,7 +154,7 @@ export default function MoviesPage({ genres: rawGenres = [], onSelectMovie, onPl
   return (
     <Box>
       {/* Hero that mirrors Home behavior but for movies */}
-      {featured && <HeroBanner movie={featured} onPlay={onPlayMovie} onMore={(id)=> onSelectMovie && onSelectMovie(id, 'movie')} mediaType="movie" fullBleed isVisible={true} />}
+      {featured && <HeroBanner movie={featured} onPlay={onPlayMovie} onMore={(id)=> onSelectMovie && onSelectMovie(id, 'movie')} mediaType="movie" fullBleed isVisible={true} isModalOpen={isModalOpen} />}
 
       {(genres || []).map((g:any)=> (
         <section key={g.id} style={{marginBottom:20}}>

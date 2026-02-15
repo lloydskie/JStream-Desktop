@@ -21,6 +21,10 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
   const [headersChecked, setHeadersChecked] = useState(false);
   const [savedPosition, setSavedPosition] = useState<number | null>(null);
   const [viewFullscreen, setViewFullscreen] = useState(false);
+  // Track whether we already fell back from webview → BrowserView to prevent loops
+  const triedBrowserViewFallback = React.useRef(false);
+  // Guard to prevent opening multiple player windows from duplicate fullscreen events
+  const playerWindowOpenedRef = React.useRef(false);
 
   // Helper to build URLs for different named providers
   function buildProviderUrl(config: any, type: "movie" | "tv", params: Record<string, any>, playerName?: string) {
@@ -124,25 +128,6 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
         try { console.info('VideoPlayer: player ->', player, 'paramsKey ->', paramsKey); } catch(e){}
         try { console.info('VideoPlayer: built URL ->', built); } catch(e){}
         setUrl(built);
-        // For Cygnus and Draco on TV, open in separate BrowserView window instead of webview
-        if (type === 'tv' && (player === 'Cygnus' || player === 'Draco')) {
-          console.info('VideoPlayer: opening player window for', player, 'with URL', built);
-          setEmbedBlocked(true);
-          setHeadersChecked(true);
-          try {
-            const playerWindow = (window as any).playerWindow;
-            if (playerWindow && typeof playerWindow.create === 'function') {
-              playerWindow.create(built);
-            } else {
-              console.warn('VideoPlayer: playerWindow not available, falling back to external browser');
-              (window as any).network.openExternal(built);
-            }
-          } catch (e) {
-            console.warn('VideoPlayer: failed to open player window for', player, e, 'falling back to external browser');
-            try { (window as any).network.openExternal(built); } catch (ex) { console.error('VideoPlayer: fallback also failed', ex); }
-          }
-          return;
-        }
       } catch (e) {
         console.error('VideoPlayer: failed to build url', e);
         setError('Failed to construct player URL');
@@ -239,66 +224,181 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
   useEffect(() => {
     if (!url || !headersChecked || useWebview || embedBlocked) return;
     let mounted = true;
+    let rafId: number | null = null;
+    let lastBounds = { x: 0, y: 0, w: 0, h: 0 };
+
+    // Compute bounds from the container element
+    function getContainerBounds(): { x: number, y: number, width: number, height: number } | null {
+      const el = containerRef.current;
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return null;
+      return { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) };
+    }
+
+    // Sync bounds and schedule next frame
+    function syncBounds() {
+      if (!mounted) return;
+      try {
+        const pv = (window as any).playerView;
+        if (!pv || typeof pv.setBounds !== 'function') return;
+        const b = getContainerBounds();
+        if (!b) return;
+        // Only call setBounds when the rect actually changed to reduce IPC noise
+        if (b.x !== lastBounds.x || b.y !== lastBounds.y || b.width !== lastBounds.w || b.height !== lastBounds.h) {
+          lastBounds = { x: b.x, y: b.y, w: b.width, h: b.height };
+          pv.setBounds(b);
+        }
+      } catch (e) {}
+      rafId = requestAnimationFrame(syncBounds);
+    }
+
+    // Create BrowserView with initial bounds from the container
     try {
       const pv = (window as any).playerView;
       if (pv && typeof pv.create === 'function') {
-        pv.create(url).then((res: any) => {
+        const initBounds = getContainerBounds();
+        pv.create(url, initBounds ? { bounds: initBounds } : {}).then((res: any) => {
           if (!mounted) return;
           if (res && res.error) {
-            setEmbedBlocked(true);
-            setUseWebview(true);
+            if (triedBrowserViewFallback.current) {
+              // We already tried webview → BrowserView. Show error instead of looping back.
+              setError('Player failed to load. Try a different player or click "Open in Window".');
+            } else {
+              setEmbedBlocked(true);
+              setUseWebview(true);
+            }
             if ((window as any).__JSTREAM_DEBUG) console.warn('playerView.create returned error', res.error);
+          } else {
+            // Start continuous bounds sync after BrowserView is ready
+            rafId = requestAnimationFrame(syncBounds);
           }
         }).catch((e: any) => {
           if (!mounted) return;
-          setEmbedBlocked(true);
-          setUseWebview(true);
+          if (triedBrowserViewFallback.current) {
+            setError('Player failed to load. Try a different player or click "Open in Window".');
+          } else {
+            setEmbedBlocked(true);
+            setUseWebview(true);
+          }
           if ((window as any).__JSTREAM_DEBUG) console.warn('playerView.create threw', e);
         });
       }
     } catch (e) {
       if ((window as any).__JSTREAM_DEBUG) console.warn('playerView.create invocation failed', e);
-      setEmbedBlocked(true);
-      setUseWebview(true);
+      if (triedBrowserViewFallback.current) {
+        setError('Player failed to load. Try a different player or click "Open in Window".');
+      } else {
+        setEmbedBlocked(true);
+        setUseWebview(true);
+      }
     }
-    const resizeHandler = () => {
-      try {
-        const pv = (window as any).playerView;
-        if (!pv || typeof pv.setBounds !== 'function') return;
-        const el = containerRef.current;
-        if (!el) return;
-        const r = el.getBoundingClientRect();
-        pv.setBounds({ x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) });
-      } catch (e) {}
-    };
-    window.addEventListener('resize', resizeHandler);
-    // initial bounds set
-    try { resizeHandler(); } catch (e) {}
+
     return () => {
       mounted = false;
+      if (rafId !== null) cancelAnimationFrame(rafId);
       try { const pv = (window as any).playerView; pv && typeof pv.destroy === 'function' && pv.destroy(); } catch (e) {}
-      window.removeEventListener('resize', resizeHandler);
     };
   }, [url, headersChecked, useWebview, embedBlocked]);
 
-  // Listen for webview load failures and fallback to opening externally
+  // Listen for webview load failures and fallback to BrowserView (not external browser)
   useEffect(() => {
     if (!useWebview) return;
     const w = webviewRef.current;
     if (!w || typeof w.addEventListener !== 'function') return;
+    let failCount = 0;
     function onFail(e: any) {
+      failCount++;
+      // Ignore aborted loads (errorCode -3) as these are just navigation cancellations
+      if (e && e.errorCode === -3) return;
       try {
-        // mark blocked and open externally
-        setEmbedBlocked(true);
-        openExternalUrl();
+        if ((window as any).__JSTREAM_DEBUG) console.warn('VideoPlayer: webview did-fail-load', e?.errorDescription || e?.errorCode);
+        if (!triedBrowserViewFallback.current) {
+          // First failure: fall back to BrowserView instead of opening in external browser.
+          // Setting useWebview=false will trigger the BrowserView creation effect.
+          triedBrowserViewFallback.current = true;
+          setUseWebview(false);
+          setEmbedBlocked(false);
+          setHeadersChecked(true);
+        } else {
+          // Already tried BrowserView fallback — show an error in-app
+          setError('Player failed to load. Try a different player or click "Open in Window".');
+          setUseWebview(false);
+          setEmbedBlocked(false);
+        }
       } catch (err) {
-        setEmbedBlocked(true);
+        setError('Player failed to load');
       }
     }
     function onDomReady() {
       try {
         const script = `(function(){
           try{
+            // === POPUP / AD BLOCKING ===
+            // Block window.open entirely — streaming sites use it for ad popups
+            window.open = function(){ return null; };
+            // Block creating invisible anchor clicks (another popup technique)
+            var origCreateElement = document.createElement.bind(document);
+            document.createElement = function(tag){
+              var el = origCreateElement(tag);
+              if (tag && tag.toLowerCase() === 'a') {
+                // Neuter click-based popups: override click to no-op
+                try {
+                  Object.defineProperty(el, 'click', { value: function(){}, writable: false, configurable: false });
+                } catch(e) {}
+              }
+              return el;
+            };
+            // Remove ad overlay elements periodically
+            function removeAdOverlays() {
+              try {
+                // Remove fixed/absolute positioned overlays that cover the player
+                document.querySelectorAll('div, section, aside, span').forEach(function(el) {
+                  try {
+                    var cs = window.getComputedStyle(el);
+                    if (!cs) return;
+                    var pos = cs.position;
+                    var zIndex = parseInt(cs.zIndex) || 0;
+                    // High z-index fixed/absolute overlays that are large are likely ads
+                    if ((pos === 'fixed' || pos === 'absolute') && zIndex > 999) {
+                      var rect = el.getBoundingClientRect();
+                      // If it covers a large portion of the viewport, it's an ad overlay
+                      if (rect.width > window.innerWidth * 0.5 && rect.height > window.innerHeight * 0.5) {
+                        // But don't remove video/iframe containers
+                        if (!el.querySelector('video') && !el.querySelector('iframe[src*="vidlink"], iframe[src*="vidsrc"], iframe[allowfullscreen]')) {
+                          el.remove();
+                        }
+                      }
+                    }
+                  } catch(e) {}
+                });
+                // Remove common ad selectors
+                var adSelectors = [
+                  '.ad-overlay', '.popup-overlay', '.ads-container', '#ad-container',
+                  '[id*="-ad-"]', '[class*="-ad-"]', '[id*="_ad_"]', '[class*="_ad_"]',
+                  '.overlay-ad', '#overlay', '.modal-overlay',
+                  'iframe[src*="ads"]', 'iframe[src*="banner"]',
+                  'iframe[src*="pop"]', 'iframe[src*="click"]',
+                  '[onclick*="window.open"]',
+                  'a[target="_blank"][style*="position"]',
+                  'div[style*="z-index: 2147483647"]',
+                  'div[style*="z-index:2147483647"]',
+                  'div[style*="z-index: 99999"]',
+                  'div[style*="z-index:99999"]'
+                ];
+                adSelectors.forEach(function(sel) {
+                  try {
+                    document.querySelectorAll(sel).forEach(function(el) {
+                      try { el.remove(); } catch(e) {}
+                    });
+                  } catch(e) {}
+                });
+              } catch(e) {}
+            }
+            removeAdOverlays();
+            setInterval(removeAdOverlays, 1000);
+
+            // === IFRAME STYLING ===
             function styleIframe(i){
               try{
                 i.style.height='100%';
@@ -328,28 +428,9 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
             }
             document.documentElement && (document.documentElement.style.height='100%');
             document.body && (document.body.style.height='100%');
-            // Intercept fullscreen requests from player controls and notify host
-            try{
-              (function(){
-                function notifyHost(u){ try{ window.postMessage({ type: 'jstream:fullscreen-request', url: u || location.href }, '*'); }catch(e){} }
-                try{
-                  ['requestFullscreen','webkitRequestFullscreen','mozRequestFullScreen','msRequestFullscreen'].forEach(function(name){
-                    try{
-                      const proto = (Element.prototype as any);
-                      if(proto && proto[name]){
-                        proto['__' + name] = proto[name];
-                        proto[name] = function(){ try{ notifyHost(location.href); }catch(e){}; try{ return Promise.resolve(); }catch(e){} };
-                      }
-                    }catch(e){}
-                  });
-                }catch(e){}
-                try{ if ((typeof HTMLVideoElement !== 'undefined') && HTMLVideoElement.prototype && HTMLVideoElement.prototype.requestFullscreen) {
-                    HTMLVideoElement.prototype['__requestFullscreen'] = HTMLVideoElement.prototype.requestFullscreen;
-                    HTMLVideoElement.prototype.requestFullscreen = function(){ try{ notifyHost(location.href); }catch(e){}; return Promise.resolve(); };
-                  }
-                }catch(e){}
-              })();
-            }catch(e){}
+            // NOTE: Do NOT intercept requestFullscreen here — let the native
+            // fullscreen API fire so the webview emits 'enter-html-full-screen'
+            // which is handled by the host (VideoPlayer).
             Array.from(document.querySelectorAll('iframe')).forEach(i=>{ styleIframe(i); ensureAncestors(i); });
             const mo = new MutationObserver((mutations)=>{
               for(const m of mutations){
@@ -386,7 +467,13 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
         // Try insertCSS first (preferred) then fallback to executeJavaScript
         try {
           if (typeof (w as any).insertCSS === 'function') {
-            const css = `* { box-sizing: border-box !important; } html, body { height: 100% !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; } iframe { height: 100% !important; width: 100% !important; display: block !important; border: 0 !important; flex: 1 1 auto !important; }`;
+            const css = `* { box-sizing: border-box !important; } html, body { height: 100% !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; } iframe { height: 100% !important; width: 100% !important; display: block !important; border: 0 !important; flex: 1 1 auto !important; }
+              .ad-overlay, .popup-overlay, .ads-container, #ad-container, .overlay-ad, #overlay, .modal-overlay,
+              div[style*="z-index: 2147483647"], div[style*="z-index:2147483647"],
+              div[style*="z-index: 99999"], div[style*="z-index:99999"],
+              iframe[src*="ads"], iframe[src*="banner"], iframe[src*="pop"], iframe[src*="click"],
+              [onclick*="window.open"], a[target="_blank"][style*="position: fixed"],
+              a[target="_blank"][style*="position: absolute"][style*="z-index"] { display: none !important; visibility: hidden !important; pointer-events: none !important; width: 0 !important; height: 0 !important; position: absolute !important; top: -9999px !important; left: -9999px !important; }`;
             (w as any).insertCSS(css).then(() => {
               console.info('VideoPlayer: insertCSS succeeded');
             }).catch((e: any) => {
@@ -424,10 +511,34 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
         } catch (e) {}
       } catch (e) { try{ if((window as any).__JSTREAM_DEBUG) console.warn('onDomReady injection failed', e); }catch(_){} }
     }
+    // Handle fullscreen requests from the webview guest
+    function onEnterFullscreen() {
+      try {
+        console.log('VideoPlayer: webview enter-html-full-screen detected');
+        openInPlayerWindow(url);
+      } catch (e) {
+        console.error('VideoPlayer: failed to handle webview fullscreen', e);
+      }
+    }
+    // Handle ipc-message from webview preload (sendToHost)
+    // NOTE: We intentionally ignore fullscreen-request here because
+    // enter-html-full-screen already handles it. Responding to both
+    // causes duplicate player windows to open.
+    function onIpcMessage(e: any) {
+      try {
+        // Reserved for future non-fullscreen IPC messages from webview preload
+      } catch (err) {
+        console.error('VideoPlayer: ipc-message handler error', err);
+      }
+    }
     try {
       w.addEventListener('did-fail-load', onFail as any);
       // Also inject styles once the guest DOM is ready so iframes inside the guest get height:100%
       try { w.addEventListener('dom-ready', onDomReady as any); } catch (e) {}
+      // Listen for native HTML fullscreen events from the webview guest
+      try { w.addEventListener('enter-html-full-screen', onEnterFullscreen as any); } catch (e) {}
+      // Listen for ipc-message from webview preload (sendToHost fullscreen notification)
+      try { w.addEventListener('ipc-message', onIpcMessage as any); } catch (e) {}
     } catch (e) {
       // some environments expose different APIs; attempt to attach via ondid-fail-load
       try { (w as any)['ondid-fail-load'] = onFail; } catch (ex) {}
@@ -435,6 +546,8 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
     return () => {
       try { w.removeEventListener && w.removeEventListener('did-fail-load', onFail as any); } catch (e) {}
       try { w.removeEventListener && w.removeEventListener('dom-ready', onDomReady as any); } catch (e) {}
+      try { w.removeEventListener && w.removeEventListener('enter-html-full-screen', onEnterFullscreen as any); } catch (e) {}
+      try { w.removeEventListener && w.removeEventListener('ipc-message', onIpcMessage as any); } catch (e) {}
     };
   }, [useWebview, url]);
 
@@ -487,9 +600,11 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
     setEmbedBlocked(false);
     setHeadersChecked(type === 'tv'); // Skip header checks for TV
     setError(null);
+    playerWindowOpenedRef.current = false;
     // Preserve the preference to use the in-DOM webview for TV content
     setUseWebview(type === 'tv');
     setViewFullscreen(false);
+    triedBrowserViewFallback.current = false;
   }, [type, player, paramsKey]);
 
   // Load saved progress if any and prepare for initial seek
@@ -566,6 +681,10 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
       if (ev && typeof ev.onFullscreenRequest === 'function') {
         const unsub = ev.onFullscreenRequest((requestUrl: string) => {
           console.log('Received fullscreen request with URL:', requestUrl);
+          if (playerWindowOpenedRef.current) {
+            console.log('VideoPlayer: BrowserView fullscreen request blocked (already opened)');
+            return;
+          }
           try {
             const pw = (window as any).playerWindow;
             const pv = (window as any).playerView;
@@ -619,6 +738,12 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
 
   // Open the player in a separate native window (preferred) or fallback to external
   function openInPlayerWindow(u?: string) {
+    // Debounce: only allow one player window to be opened per video load
+    if (playerWindowOpenedRef.current) {
+      try { console.log('VideoPlayer: openInPlayerWindow blocked (already opened)'); } catch(e) {}
+      return;
+    }
+    playerWindowOpenedRef.current = true;
     try {
       const urlToOpen = u || url;
       const pw = (window as any).playerWindow;
@@ -674,7 +799,7 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
               src={url}
               className="video-embed"
               partition="persist:player"
-              allowpopups
+              {...({ allowfullscreen: '' } as any)}
               preload={(window as any).webviewPreloadPath || ''}
               style={{ flex: '1 1 auto', width: '100%', height: '100%', border: 0 }}
             />
@@ -684,8 +809,9 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
             <div style={{ marginBottom: 8 }}>Player error: {error}</div>
             {url && <div style={{ marginBottom: 8, wordBreak: 'break-all' }}><strong>URL:</strong> <a href={url} target="_blank" rel="noreferrer">{url}</a></div>}
             <div style={{ display: 'flex', gap: 8 }}>
-              {url && <button className="button" onClick={openExternal}>Open Player</button>}
-              <button className="button ghost" onClick={() => { setError(null); setUseWebview(false); }}>Retry</button>
+              {url && <button className="button" onClick={() => openInPlayerWindow()}>Open in Window</button>}
+              {url && <button className="button" onClick={openExternal}>Open in Browser</button>}
+              <button className="button ghost" onClick={() => { setError(null); setUseWebview(false); triedBrowserViewFallback.current = false; }}>Retry</button>
             </div>
           </div>
         ) : (

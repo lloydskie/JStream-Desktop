@@ -366,6 +366,13 @@ export default function App() {
   const [playerSeasonEpisodes, setPlayerSeasonEpisodes] = useState<any[] | null>(null);
   const [playerSelectedSeason, setPlayerSelectedSeason] = useState<number | null>(null);
   const [playerSelectedEpisode, setPlayerSelectedEpisode] = useState<number | null>(null);
+  // Ref to carry saved TV progress into the season/episode-fetch effects.
+  // Written by openPlayer(), read by the effects, cleared after use.
+  const tvProgressRef = React.useRef<{ season: number; episode: number } | null>(null);
+  // Ref that always mirrors playerModalParams so effects can read the latest
+  // value without stale closures or depending on setState batching.
+  const playerModalParamsRef = React.useRef<Record<string, any> | null>(playerModalParams);
+  React.useEffect(() => { playerModalParamsRef.current = playerModalParams; }, [playerModalParams]);
   // Fetch seasons when TV player opens
   // Serialize playerModalParams to ensure in-place updates still trigger effects
   const playerModalParamsKey = React.useMemo(() => JSON.stringify(playerModalParams || {}), [playerModalParams]);
@@ -393,7 +400,9 @@ export default function App() {
     (async () => {
       try {
         if (!playerModalOpen || playerModalType !== 'tv') return;
-        const tmdbId = playerModalParams && (playerModalParams.tmdbId || playerModalParams.id || playerModalParams.showId);
+        // Read latest params from ref to avoid stale closure
+        const currentParams = playerModalParamsRef.current;
+        const tmdbId = currentParams && (currentParams.tmdbId || currentParams.id || currentParams.showId);
         if (!tmdbId) return;
         const details = await fetchTMDB(`tv/${tmdbId}`);
         if (!mounted) return;
@@ -402,7 +411,10 @@ export default function App() {
         // default to Season 1 if available, otherwise first season
         const hasSeason1 = seasons.find((s: any) => Number(s.season_number) === 1);
         const defaultSeason = hasSeason1 ? 1 : (seasons[0] && (seasons[0].season_number || seasons[0].id)) || 1;
-        const initialSeason = (playerModalParams && (playerModalParams.season || playerModalParams.season_number)) || defaultSeason;
+        // Check the ref first (saved progress), then params, then default
+        const savedSeason = tvProgressRef.current?.season;
+        const paramSeason = currentParams && (currentParams.season || currentParams.season_number);
+        const initialSeason = savedSeason || paramSeason || defaultSeason;
         if (initialSeason) {
           const seasonNum = Number(initialSeason);
           setPlayerSelectedSeason(seasonNum);
@@ -424,7 +436,9 @@ export default function App() {
           setPlayerSeasonEpisodes([]);
           return;
         }
-        const tmdbId = playerModalParams && (playerModalParams.tmdbId || playerModalParams.id || playerModalParams.showId);
+        // Read latest params from ref to avoid stale closure
+        const currentParams = playerModalParamsRef.current;
+        const tmdbId = currentParams && (currentParams.tmdbId || currentParams.id || currentParams.showId);
         if (!tmdbId) return;
         const seasonData = await fetchTMDB(`tv/${tmdbId}/season/${playerSelectedSeason}`);
         if (!mounted) return;
@@ -433,11 +447,19 @@ export default function App() {
         // default to Episode 1 if available, otherwise first episode
         const hasEp1 = episodes.find((ep: any) => Number(ep.episode_number) === 1);
         const defaultEp = hasEp1 ? (episodes.find((ep: any) => Number(ep.episode_number) === 1).episode_number) : (episodes[0] && (episodes[0].episode_number || episodes[0].id)) || 1;
-        const initialEp = (playerModalParams && (playerModalParams.episode || playerModalParams.episode_number)) || defaultEp;
+        // Check the ref first (saved progress), then params, then default
+        // Only use saved episode from ref if the season matches the saved season
+        const savedEp = (tvProgressRef.current && tvProgressRef.current.season === playerSelectedSeason) ? tvProgressRef.current.episode : null;
+        const paramEp = currentParams && (currentParams.episode || currentParams.episode_number);
+        const initialEp = savedEp || paramEp || defaultEp;
         if (initialEp) {
           const epNum = Number(initialEp);
           setPlayerSelectedEpisode(epNum);
           try { setPlayerModalParams((p: any) => ({ ...(p || {}), episode: epNum })); } catch (err) { }
+        }
+        // Clear the ref after the initial restore is complete for both season and episode
+        if (tvProgressRef.current && tvProgressRef.current.season === playerSelectedSeason) {
+          tvProgressRef.current = null;
         }
       } catch (e) {
         // ignore
@@ -445,6 +467,20 @@ export default function App() {
     })();
     return () => { mounted = false; };
   }, [playerModalOpen, playerModalType, playerSelectedSeason]);
+
+  // Save TV progress whenever season/episode changes for an active TV player
+  React.useEffect(() => {
+    if (!playerModalOpen || playerModalType !== 'tv') return;
+    if (!playerSelectedSeason || !playerSelectedEpisode) return;
+    const tmdbId = playerModalParams && (playerModalParams.tmdbId || playerModalParams.id || playerModalParams.showId);
+    if (!tmdbId) return;
+    try {
+      const db = (window as any).database;
+      if (db && typeof db.tvProgressSet === 'function') {
+        db.tvProgressSet(String(tmdbId), playerSelectedSeason, playerSelectedEpisode);
+      }
+    } catch (e) { /* ignore */ }
+  }, [playerModalOpen, playerModalType, playerSelectedSeason, playerSelectedEpisode]);
 
   React.useEffect(() => {
     const scroller = document.getElementById('season-scroller');
@@ -581,37 +617,74 @@ export default function App() {
     };
     const combined = { ...(params || {}), ...featureParams, tmdbId: idStr };
     setPlayerParams(combined);
-    // Open the player in a fullscreen modal (user requested modal iframe)
-    setPlayerModalType(type);
-    // include the currently selected player provider so the modal's VideoPlayer
-    // receives the desired provider immediately
-    setPlayerModalParams({ ...(combined || {}), player: selectedPlayer });
-    // initialize player season/episode state from params if present
-    try {
-      if (type === 'tv') {
-        const s = params && (params.season || params.season_number || params.seasonNum);
-        const e = params && (params.episode || params.episode_number || params.ep);
-        setPlayerSelectedSeason(s ? Number(s) : null);
-        setPlayerSelectedEpisode(e ? Number(e) : null);
+
+    // For TV shows, restore saved progress if no explicit season/episode provided
+    const openPlayer = (finalParams: Record<string, any>, savedSeason?: number | null, savedEpisode?: number | null) => {
+      // Write saved progress to ref BEFORE setting state so the effects can read it
+      if (savedSeason && savedEpisode) {
+        tvProgressRef.current = { season: savedSeason, episode: savedEpisode };
       } else {
-        setPlayerSelectedSeason(null);
-        setPlayerSelectedEpisode(null);
+        tvProgressRef.current = null;
       }
-    } catch (err) { /* ignore */ }
-    setPlayerModalOpen(true);
-    try { (window as any).database.setPersonalization('last_selected_movie', idStr); } catch(e) { /* ignore */ }
-    // Allow DetailsModal cleanup to finish without suppressing future resumes.
-    // Defer the delete so React has time to commit the unmount and run the
-    // DetailsModal cleanup effect (which checks __suppressHeroResume).
-    try { setTimeout(() => { try { delete (window as any).__suppressHeroResume; } catch (e) { /* ignore */ } }, 500); } catch (e) { /* ignore */ }
-    // Save to watch history when starting to play
-    try { (window as any).database.watchHistorySet(historyKey, 0); } catch(e) { console.error('watchHistorySet on play failed', e); }
-    try { (window as any).database.recentWatchesAdd(historyKey); } catch(e) { /* ignore */ }
+      setPlayerModalType(type);
+      const newParams = { ...finalParams, player: selectedPlayer };
+      setPlayerModalParams(newParams);
+      // Immediately update the ref so the effects can read it on this same tick
+      playerModalParamsRef.current = newParams;
+      try {
+        if (type === 'tv') {
+          const s = finalParams.season || finalParams.season_number;
+          const e = finalParams.episode || finalParams.episode_number;
+          setPlayerSelectedSeason(s ? Number(s) : null);
+          setPlayerSelectedEpisode(e ? Number(e) : null);
+        } else {
+          setPlayerSelectedSeason(null);
+          setPlayerSelectedEpisode(null);
+        }
+      } catch (err) { /* ignore */ }
+      setPlayerModalOpen(true);
+      try { (window as any).database.setPersonalization('last_selected_movie', idStr); } catch(e) { /* ignore */ }
+      try { setTimeout(() => { try { delete (window as any).__suppressHeroResume; } catch (e) { /* ignore */ } }, 500); } catch (e) { /* ignore */ }
+      try { (window as any).database.watchHistorySet(historyKey, 0); } catch(e) { console.error('watchHistorySet on play failed', e); }
+      try { (window as any).database.recentWatchesAdd(historyKey); } catch(e) { /* ignore */ }
+    };
+
+    if (type === 'tv') {
+      const hasExplicitEpisode = params && (params.season || params.season_number || params.episode || params.episode_number);
+      if (hasExplicitEpisode) {
+        // User clicked a specific episode — use those params directly
+        openPlayer(combined);
+      } else {
+        // No specific episode — try to restore last watched progress
+        try {
+          const db = (window as any).database;
+          if (db && typeof db.tvProgressGet === 'function') {
+            db.tvProgressGet(idStr).then((saved: any) => {
+              if (saved && saved.season && saved.episode) {
+                const restoredParams = { ...combined, season: saved.season, episode: saved.episode };
+                openPlayer(restoredParams, saved.season, saved.episode);
+              } else {
+                openPlayer(combined);
+              }
+            }).catch(() => openPlayer(combined));
+          } else {
+            openPlayer(combined);
+          }
+        } catch (e) {
+          openPlayer(combined);
+        }
+      }
+    } else {
+      openPlayer(combined);
+    }
   }
 
   // Close player modal and reload page to reset state
   function handleClosePlayerModal() {
     setPlayerModalOpen(false);
+    // Close any separate player windows and destroy any BrowserView
+    try { const pw = (window as any).playerWindow; if (pw && typeof pw.close === 'function') pw.close(); } catch (e) {}
+    try { const pv = (window as any).playerView; if (pv && typeof pv.destroy === 'function') pv.destroy(); } catch (e) {}
     window.location.reload();
   }
 
@@ -921,7 +994,7 @@ export default function App() {
                                     <input
                                       ref={(el) => { searchInputRef.current = el; if (el) el.focus(); }}
                                       className={`header-search-input input ${searchOpen ? 'open' : ''}`}
-                                      placeholder="Titles, peoples, gneres"
+                                      placeholder="Titles, peoples, genres"
                                       value={headerSearchQuery}
                                       onChange={(e) => {
                                         const v = e.target.value;
@@ -1021,8 +1094,8 @@ export default function App() {
             <div className="app-shell" aria-hidden={playerModalOpen || detailsModalOpen} style={playerModalOpen || detailsModalOpen ? { pointerEvents: 'none' } : undefined}>
               <TabPanels style={{width: '100%', padding: 0}} key={`panels-kids-${kidsModeActive}`}>
                 <TabPanel sx={{padding: 0}}><HomeGrid onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} selectedTmdbId={selectedTmdbId} selectedGenre={selectedGenre} isModalOpen={playerModalOpen} onSetFeatured={setFeaturedMovie} onSelectPerson={handleSelectPerson} onExploreCategory={handleExploreCategory} /></TabPanel>
-                <TabPanel sx={{padding: 0}}><TVPage genres={tvGenres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
-                <TabPanel sx={{padding: 0}}><MoviesPage genres={genres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
+                <TabPanel sx={{padding: 0}}><TVPage genres={tvGenres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} isModalOpen={playerModalOpen || detailsModalOpen} /></TabPanel>
+                <TabPanel sx={{padding: 0}}><MoviesPage genres={genres} onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} isModalOpen={playerModalOpen || detailsModalOpen} /></TabPanel>
                 <TabPanel sx={{padding: 0}}><NewPopularPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>
                 <TabPanel sx={{padding: 0}}><MyListPage onPlay={handlePlayMovie} onSelect={handleSelectMovie} /></TabPanel>
                 <TabPanel sx={{padding: 0}}><BrowseLanguagesPage onSelectMovie={handleSelectMovie} onPlayMovie={handlePlayMovie} /></TabPanel>

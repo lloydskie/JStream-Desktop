@@ -53,6 +53,7 @@ interface UserDatabase {
   watch_history: WatchHistoryItem[];
   personalization: PersonalizationItem[];
   recent_watches: { movie: number[]; tv: number[] };
+  tv_progress: Record<string, { season: number; episode: number; updated_at: string }>;
 }
 
 // Hash function for PINs (using SHA-256)
@@ -125,6 +126,7 @@ export function createAccount(
     watch_history: [] as WatchHistoryItem[],
     personalization: [] as PersonalizationItem[],
     recent_watches: { movie: [] as number[], tv: [] as number[] },
+    tv_progress: {},
   };
   fs.writeFileSync(userDbPath, JSON.stringify(initialData, null, 2));
   
@@ -321,6 +323,7 @@ function loadUserDb(accountId: string): any {
       watch_history: [],
       personalization: [],
       recent_watches: { movie: [], tv: [] },
+      tv_progress: {},
     };
   }
 }
@@ -486,6 +489,27 @@ export function recentWatchesRemove(id: number, type: 'movie' | 'tv'): void {
     db.recent_watches.movie = db.recent_watches.movie.filter((v: number) => v !== id);
   }
   
+  saveCurrentUserDb(db);
+}
+
+// TV Progress - remember last watched season/episode per TV show
+export function tvProgressGet(tmdbId: string): { season: number; episode: number; updated_at: string } | null {
+  const db = getCurrentUserDb();
+  if (!db.tv_progress) db.tv_progress = {};
+  return db.tv_progress[tmdbId] || null;
+}
+
+export function tvProgressSet(tmdbId: string, season: number, episode: number): void {
+  const db = getCurrentUserDb();
+  if (!db.tv_progress) db.tv_progress = {};
+  db.tv_progress[tmdbId] = { season, episode, updated_at: new Date().toISOString() };
+  saveCurrentUserDb(db);
+}
+
+export function tvProgressRemove(tmdbId: string): void {
+  const db = getCurrentUserDb();
+  if (!db.tv_progress) return;
+  delete db.tv_progress[tmdbId];
   saveCurrentUserDb(db);
 }
 

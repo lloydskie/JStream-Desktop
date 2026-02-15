@@ -46,6 +46,9 @@ import {
   recentWatchesGet as userRecentWatchesGet,
   recentWatchesAdd as userRecentWatchesAdd,
   recentWatchesRemove as userRecentWatchesRemove,
+  tvProgressGet as userTvProgressGet,
+  tvProgressSet as userTvProgressSet,
+  tvProgressRemove as userTvProgressRemove,
 } from './main/accountDatabase';
 
 // Recent watches list stored as JSON with separate movie/tv id arrays
@@ -384,6 +387,34 @@ ipcMain.handle('recent-watches-remove', async (event, id: number, type: 'movie' 
   }
 });
 
+// TV progress handlers (user-scoped) - remember last watched season/episode
+ipcMain.handle('tv-progress-get', async (event, tmdbId: string) => {
+  try {
+    return userTvProgressGet(tmdbId);
+  } catch (e) {
+    console.error('tv-progress-get error', e);
+    return null;
+  }
+});
+ipcMain.handle('tv-progress-set', async (event, tmdbId: string, season: number, episode: number) => {
+  try {
+    userTvProgressSet(tmdbId, season, episode);
+    return true;
+  } catch (e) {
+    console.error('tv-progress-set error', e);
+    return false;
+  }
+});
+ipcMain.handle('tv-progress-remove', async (event, tmdbId: string) => {
+  try {
+    userTvProgressRemove(tmdbId);
+    return true;
+  } catch (e) {
+    console.error('tv-progress-remove error', e);
+    return false;
+  }
+});
+
 // Window control handlers for frameless window
 ipcMain.handle('window-minimize', async (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
@@ -473,10 +504,11 @@ const createWindow = () => {
     },
   });
 
-  // Close player windows when main window gains focus
+  // Close fullscreen-overlay windows when main window gains focus.
+  // Only close windows that were opened for BrowserView fullscreen transitions,
+  // NOT standalone player windows opened by Cygnus/Draco providers.
   mainWindow.on('focus', () => {
     try {
-      // Close any fullscreen windows that were created for player fullscreen
       for (const [id, meta] of playerViewMeta.entries()) {
         if (meta.fullscreenWindowId) {
           try {
@@ -485,17 +517,11 @@ const createWindow = () => {
               win.close();
             }
           } catch (e) {}
-        }
-      }
-      // Also close any windows created via open-player-window
-      const allWindows = BrowserWindow.getAllWindows();
-      for (const win of allWindows) {
-        if (win !== mainWindow && !win.isDestroyed()) {
-          try { win.close(); } catch (e) {}
+          meta.fullscreenWindowId = undefined;
         }
       }
     } catch (e) {
-      console.error('Failed to close player windows on focus', e);
+      console.error('Failed to close fullscreen windows on focus', e);
     }
   });
 
@@ -588,6 +614,23 @@ app.on('ready', () => {
     console.warn('Adblock: failed to register webRequest handler', e);
   }
 
+  // Also register adblock on the persist:player partition used by webview tags
+  try {
+    const playerSession = session.fromPartition('persist:player');
+    playerSession.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, callback) => {
+      try {
+        if (adblock.enabled && adblock.matches(details.url)) {
+          return callback({ cancel: true });
+        }
+      } catch (e) {
+        console.error('adblock (player partition) match error', e);
+      }
+      return callback({});
+    });
+  } catch (e) {
+    console.warn('Adblock: failed to register player partition webRequest handler', e);
+  }
+
   // Add referrer header for YouTube embed requests to fix error 153
   try {
     session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['*://www.youtube.com/embed/*'] }, (details, callback) => {
@@ -610,8 +653,33 @@ app.on('ready', () => {
       contents.setWindowOpenHandler(({ url, disposition, referrer, features }) => {
         try {
           if (adblock.popupBlocking) {
+            // For player-related webContents (BrowserView or webview partition:player),
+            // block ALL popups aggressively — these are almost always ad popups.
+            // The main window renderer is allowed to open child frames as needed.
+            try {
+              const contentsUrl = contents.getURL() || '';
+              const isPlayerContent = contentsUrl.includes('vidsrc') ||
+                contentsUrl.includes('vidlink') ||
+                contentsUrl.includes('vidfast') ||
+                contentsUrl.includes('videasy') ||
+                contentsUrl.includes('embed') ||
+                contentsUrl.includes('player');
+              if (isPlayerContent) {
+                // Allow same-origin navigations (sub-frames the player needs)
+                try {
+                  const contentsOrigin = new URL(contentsUrl).origin;
+                  const popupOrigin = new URL(url).origin;
+                  if (contentsOrigin !== popupOrigin) {
+                    return { action: 'deny' };
+                  }
+                } catch (e) {
+                  // If URL parsing fails, block it
+                  return { action: 'deny' };
+                }
+              }
+            } catch (e) {}
+            // For non-player content, only deny URLs that match adblock filter rules
             if (adblock.matches(url)) return { action: 'deny' };
-            return { action: 'deny' };
           }
         } catch (e) {
           console.error('popup block handler error', e);
@@ -683,12 +751,23 @@ ipcMain.handle('check-url-headers', async (event, urlString: string) => {
 });
 
 // IPC: open a dedicated BrowserWindow for the player URL
-const playerWindowMeta = new Map<number, { prevFullScreen: boolean, prevMaximized: boolean }>();
+// Track per-parent: the saved window state and how many player windows are still open.
+// Only restore the parent's state when ALL player windows have been closed.
+const playerWindowMeta = new Map<number, { prevFullScreen: boolean, prevMaximized: boolean, openCount: number }>();
+// Track all player windows opened by each parent so they can be closed on demand
+const playerWindowsByParent = new Map<number, Set<BrowserWindow>>();
 ipcMain.handle('open-player-window', async (event, urlString: string) => {
   try {
     const parentWin = BrowserWindow.fromWebContents(event.sender as any) || null;
     if (parentWin) {
-      playerWindowMeta.set(parentWin.id, { prevFullScreen: parentWin.isFullScreen(), prevMaximized: parentWin.isMaximized() });
+      const existing = playerWindowMeta.get(parentWin.id);
+      if (existing) {
+        // Increment the count but keep the ORIGINAL saved state
+        existing.openCount++;
+      } else {
+        // First player window for this parent — save the current state
+        playerWindowMeta.set(parentWin.id, { prevFullScreen: parentWin.isFullScreen(), prevMaximized: parentWin.isMaximized(), openCount: 1 });
+      }
     }
     const win = new BrowserWindow({
       width: 1100,
@@ -700,6 +779,14 @@ ipcMain.handle('open-player-window', async (event, urlString: string) => {
     });
     // Remove the menu bar entirely so the window is plain
     win.setMenu(null);
+
+    // Track this window under its parent
+    if (parentWin) {
+      if (!playerWindowsByParent.has(parentWin.id)) {
+        playerWindowsByParent.set(parentWin.id, new Set());
+      }
+      playerWindowsByParent.get(parentWin.id)!.add(win);
+    }
 
     // Disable DevTools for player windows
     win.webContents.on('devtools-opened', () => {
@@ -720,20 +807,21 @@ ipcMain.handle('open-player-window', async (event, urlString: string) => {
     if (parentWin) {
       win.on('closed', () => {
         try {
+          // Remove from tracking set
+          const tracked = playerWindowsByParent.get(parentWin.id);
+          if (tracked) { tracked.delete(win); if (tracked.size === 0) playerWindowsByParent.delete(parentWin.id); }
           const meta = playerWindowMeta.get(parentWin.id);
           if (meta) {
-            try { parentWin.setFullScreen(!!meta.prevFullScreen); } catch (e) {}
-            try { (parentWin as any).setSimpleFullScreen && (parentWin as any).setSimpleFullScreen(!!meta.prevFullScreen); } catch (e) {}
-            if (meta.prevMaximized) {
-              try { parentWin.maximize(); } catch (e) {}
-            } else {
-              try { parentWin.unmaximize(); } catch (e) {}
+            meta.openCount = Math.max(0, meta.openCount - 1);
+            // Only restore the parent window state when ALL player windows are closed
+            if (meta.openCount <= 0) {
+              try { parentWin.setFullScreen(!!meta.prevFullScreen); } catch (e) {}
+              try { (parentWin as any).setSimpleFullScreen && (parentWin as any).setSimpleFullScreen(!!meta.prevFullScreen); } catch (e) {}
+              if (meta.prevMaximized) {
+                try { parentWin.maximize(); } catch (e) {}
+              }
+              playerWindowMeta.delete(parentWin.id);
             }
-            playerWindowMeta.delete(parentWin.id);
-          } else {
-            try { parentWin.setFullScreen(false); } catch (e) {}
-            try { (parentWin as any).setSimpleFullScreen && (parentWin as any).setSimpleFullScreen(false); } catch (e) {}
-            try { parentWin.unmaximize(); } catch (e) {}
           }
         } catch (e) {
           console.error('Failed to restore parent window state after player close', e);
@@ -747,6 +835,32 @@ ipcMain.handle('open-player-window', async (event, urlString: string) => {
   } catch (e) {
     console.error('open-player-window failed', e);
     return { error: String(e) };
+  }
+});
+
+// IPC: close all player windows opened by the calling parent
+ipcMain.handle('close-player-windows', async (event) => {
+  try {
+    const parentWin = BrowserWindow.fromWebContents(event.sender as any) || null;
+    if (!parentWin) return;
+    // Close tracked player windows
+    const tracked = playerWindowsByParent.get(parentWin.id);
+    if (tracked) {
+      for (const win of tracked) {
+        try { if (!win.isDestroyed()) win.close(); } catch (e) {}
+      }
+      playerWindowsByParent.delete(parentWin.id);
+    }
+    // Also close any other windows that aren't the main window
+    const allWindows = BrowserWindow.getAllWindows();
+    for (const win of allWindows) {
+      if (win !== parentWin && !win.isDestroyed()) {
+        try { win.close(); } catch (e) {}
+      }
+    }
+    playerWindowMeta.delete(parentWin.id);
+  } catch (e) {
+    console.error('close-player-windows failed', e);
   }
 });
 
@@ -894,7 +1008,9 @@ ipcMain.handle('player-view-create', async (event, urlString: string, opts: { bo
       };
     }
     view.setBounds(b);
-    view.setAutoResize({ width: true, height: true });
+    // Do NOT use setAutoResize — bounds are managed by the renderer via
+    // player-view-set-bounds IPC calls so the BrowserView stays aligned
+    // with the modal container instead of stretching to the full window.
 
     // Load the URL
     await view.webContents.loadURL(urlString);

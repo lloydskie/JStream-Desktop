@@ -71,14 +71,48 @@ export default function HomeGrid({ onSelectMovie, onPlayMovie, selectedTmdbId, s
           topRated: primaryRated.slice(),
         };
 
-        // becauseYouWatched - try to fetch recommendations if we have last selected
-        try{
-          const last = await (window as any).database.getPersonalization('last_selected_movie');
-          if (last) {
-            const rec = await fetchTMDB(`movie/${last}/recommendations`);
-            sources.becauseYouWatched = (rec.results || []).slice();
+        // becauseYouWatched - use the most recently watched item from recent_watches
+        let becauseWatchedId: number | null = null;
+        let becauseWatchedType: 'movie' | 'tv' = 'movie';
+        try {
+          const db = (window as any).database;
+          if (db && typeof db.recentWatchesGet === 'function') {
+            const recentList = await db.recentWatchesGet();
+            const movieIds: number[] = (recentList && Array.isArray(recentList.movie)) ? recentList.movie : [];
+            const tvIds: number[] = (recentList && Array.isArray(recentList.tv)) ? recentList.tv : [];
+            // Find the most recently watched by checking watch_history timestamps
+            let bestId: number | null = null;
+            let bestType: 'movie' | 'tv' = 'movie';
+            let bestTime = 0;
+            const checkCandidate = async (id: number, type: 'movie' | 'tv') => {
+              try {
+                if (db && typeof db.watchHistoryGet === 'function') {
+                  const entry = await db.watchHistoryGet(`${type}:${id}`);
+                  if (entry && entry.watched_at) {
+                    const t = new Date(entry.watched_at).getTime();
+                    if (t > bestTime) { bestTime = t; bestId = id; bestType = type; }
+                  }
+                }
+              } catch (e) { /* ignore */ }
+            };
+            // Check top few from each list (most recent are first)
+            for (const id of movieIds.slice(0, 5)) await checkCandidate(id, 'movie');
+            for (const id of tvIds.slice(0, 5)) await checkCandidate(id, 'tv');
+            // If no watch_history timestamp found, just use the first available ID
+            if (!bestId) {
+              if (movieIds.length > 0) { bestId = movieIds[0]; bestType = 'movie'; }
+              else if (tvIds.length > 0) { bestId = tvIds[0]; bestType = 'tv'; }
+            }
+            becauseWatchedId = bestId;
+            becauseWatchedType = bestType;
           }
-        }catch(e){ /* ignore */ }
+        } catch (e) { /* ignore */ }
+        if (becauseWatchedId) {
+          try {
+            const rec = await fetchTMDB(`${becauseWatchedType}/${becauseWatchedId}/recommendations`);
+            sources.becauseYouWatched = (rec.results || []).slice();
+          } catch (e) { /* ignore */ }
+        }
 
         // helper to allocate without duplicates
         const used = new Set<number>();
@@ -192,14 +226,13 @@ export default function HomeGrid({ onSelectMovie, onPlayMovie, selectedTmdbId, s
         if (!feat) feat = shuffled[0] || primaryPopular[0] || null;
         setFeatured(feat);
         onSetFeatured && onSetFeatured(feat);
-        // because you watched -> if last_selected_movie exists, fetch recommendations
-        try{
-          const last = await (window as any).database.getPersonalization('last_selected_movie');
-          if (last) {
-            const rec = await fetchTMDB(`movie/${last}/recommendations`);
-            setBecauseYouWatched(rec.results?.slice(0,20) || []);
-          }
-        }catch(e){/* ignore */}
+        // Refresh becauseYouWatched with the resolved most-recent-watched item
+        if (becauseWatchedId) {
+          try {
+            const rec = await fetchTMDB(`${becauseWatchedType}/${becauseWatchedId}/recommendations`);
+            setBecauseYouWatched(rec.results?.slice(0, 20) || []);
+          } catch (e) { /* ignore */ }
+        }
       } catch (err) {
         console.error('Failed to load movie sections:', err);
       } finally {
@@ -243,25 +276,45 @@ export default function HomeGrid({ onSelectMovie, onPlayMovie, selectedTmdbId, s
 
         setHasRecentWatches(hasRecent);
 
-        const last = await (window as any).database.getPersonalization('last_selected_movie');
-        if (!last) {
+        // Find the most recently watched item to resolve its title
+        let recentId: number | null = null;
+        let recentType: 'movie' | 'tv' = 'movie';
+        try {
+          if (db && typeof db.recentWatchesGet === 'function') {
+            const recentList = await db.recentWatchesGet();
+            const movieIds: number[] = (recentList && Array.isArray(recentList.movie)) ? recentList.movie : [];
+            const tvIds: number[] = (recentList && Array.isArray(recentList.tv)) ? recentList.tv : [];
+            let bestTime = 0;
+            const check = async (id: number, type: 'movie' | 'tv') => {
+              try {
+                if (db && typeof db.watchHistoryGet === 'function') {
+                  const entry = await db.watchHistoryGet(`${type}:${id}`);
+                  if (entry && entry.watched_at) {
+                    const t = new Date(entry.watched_at).getTime();
+                    if (t > bestTime) { bestTime = t; recentId = id; recentType = type; }
+                  }
+                }
+              } catch (e) { /* ignore */ }
+            };
+            for (const id of movieIds.slice(0, 5)) await check(id, 'movie');
+            for (const id of tvIds.slice(0, 5)) await check(id, 'tv');
+            if (!recentId) {
+              if (movieIds.length > 0) { recentId = movieIds[0]; recentType = 'movie'; }
+              else if (tvIds.length > 0) { recentId = tvIds[0]; recentType = 'tv'; }
+            }
+          }
+        } catch (e) { /* ignore */ }
+
+        if (!recentId) {
           setLastSelectedTitle(null);
           return;
         }
 
-        // Try movie first, then fallback to tv
+        // Fetch the title of the most recently watched item
         try {
-          const m = await fetchTMDB(`movie/${last}`);
-          if (m && (m.title || m.name)) {
-            setLastSelectedTitle(m.title || m.name || null);
-            return;
-          }
-        } catch (e) { /* ignore */ }
-
-        try {
-          const t = await fetchTMDB(`tv/${last}`);
-          if (t && (t.name || t.title)) {
-            setLastSelectedTitle(t.name || t.title || null);
+          const details = await fetchTMDB(`${recentType}/${recentId}`);
+          if (details && (details.title || details.name)) {
+            setLastSelectedTitle(details.title || details.name || null);
             return;
           }
         } catch (e) { /* ignore */ }

@@ -3,6 +3,40 @@
   document.title = '[JSTREAM PRELOAD ACTIVE]';
   console.log('[JSTREAM] webview-preload.js running');
 
+  // === POPUP / AD BLOCKING ===
+  // Block window.open entirely — streaming sites use it for ad popups
+  try { window.open = function(){ return null; }; } catch(e) {}
+  // Block click-jacking popups via invisible anchors
+  try {
+    var _origCreate = document.createElement.bind(document);
+    document.createElement = function(tag) {
+      var el = _origCreate(tag);
+      if (tag && tag.toLowerCase() === 'a') {
+        try { Object.defineProperty(el, 'click', { value: function(){}, writable: false, configurable: false }); } catch(e) {}
+      }
+      return el;
+    };
+  } catch(e) {}
+
+  // Fullscreen support: use ipcRenderer.sendToHost to notify the webview host
+  // when the guest page requests fullscreen (double-click, fullscreen button, etc.)
+  let ipcRenderer = null;
+  try {
+    ipcRenderer = require('electron').ipcRenderer;
+  } catch (e) {
+    console.warn('[JSTREAM] ipcRenderer not available in webview preload');
+  }
+
+  function notifyHostFullscreen() {
+    try {
+      if (ipcRenderer && typeof ipcRenderer.sendToHost === 'function') {
+        ipcRenderer.sendToHost('fullscreen-request', location.href);
+      }
+    } catch (e) {
+      console.warn('[JSTREAM] sendToHost fullscreen failed', e);
+    }
+  }
+
   function styleIframe(i) {
     try {
       i.style.setProperty('height', '100%', 'important');
@@ -92,4 +126,9 @@
   }
 
   enforceAll();
+
+  // Fullscreen: rely on the native 'enter-html-full-screen' event on the
+  // webview tag. Do NOT intercept requestFullscreen here — calling
+  // sendToHost('fullscreen-request') on top of the native event causes
+  // the host to open duplicate player windows.
 })();

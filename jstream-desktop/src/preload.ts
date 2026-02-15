@@ -99,6 +99,9 @@ contextBridge.exposeInMainWorld('database', {
   recentWatchesSet: (list: number[]) => ipcRenderer.invoke('recent-watches-set', list),
   recentWatchesAdd: (itemId: string | number) => ipcRenderer.invoke('recent-watches-add', itemId),
   recentWatchesRemove: (id: number, type: 'movie' | 'tv') => ipcRenderer.invoke('recent-watches-remove', id, type),
+  tvProgressGet: (tmdbId: string) => ipcRenderer.invoke('tv-progress-get', tmdbId),
+  tvProgressSet: (tmdbId: string, season: number, episode: number) => ipcRenderer.invoke('tv-progress-set', tmdbId, season, episode),
+  tvProgressRemove: (tmdbId: string) => ipcRenderer.invoke('tv-progress-remove', tmdbId),
 });
 
 // Account management API
@@ -136,6 +139,7 @@ contextBridge.exposeInMainWorld('network', {
 
 contextBridge.exposeInMainWorld('playerWindow', {
   open: (u: string) => ipcRenderer.invoke('open-player-window', u),
+  close: () => ipcRenderer.invoke('close-player-windows'),
 });
 
 // BrowserView player API: create an overlay BrowserView attached to the app window
