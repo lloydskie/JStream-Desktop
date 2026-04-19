@@ -664,6 +664,99 @@ app.on('ready', () => {
                 contentsUrl.includes('videasy') ||
                 contentsUrl.includes('embed') ||
                 contentsUrl.includes('player');
+
+              // Allow watchparty.me links from any player — open in a dedicated window
+              if (url.includes('watchparty.me')) {
+                // Find the parent BrowserWindow to get the media title & mute its player
+                let parentWin: BrowserWindow | null = null;
+                try {
+                  parentWin = BrowserWindow.fromWebContents(contents) || BrowserWindow.getAllWindows().find(w => w.webContents === contents) || null;
+                  // If contents is a BrowserView, find the parent window that owns it
+                  if (!parentWin) {
+                    for (const w of BrowserWindow.getAllWindows()) {
+                      try { if ((w as any).getBrowserViews && (w as any).getBrowserViews().some((v: any) => v.webContents === contents)) { parentWin = w; break; } } catch (e) {}
+                    }
+                  }
+                } catch (e) {}
+
+                // Resolve the main window: if parentWin is a player window, find its main window parent
+                let mainWin: BrowserWindow | null = parentWin;
+                if (parentWin) {
+                  for (const [mainId, tracked] of playerWindowsByParent.entries()) {
+                    if (tracked.has(parentWin)) {
+                      try { const mw = BrowserWindow.fromId(mainId); if (mw && !mw.isDestroyed()) mainWin = mw; } catch (e) {}
+                      break;
+                    }
+                  }
+                }
+
+                // Build the window title from the current media title
+                let wpTitle = 'Watch Party';
+                if (mainWin) {
+                  const title = mediaTitle.get(mainWin.id);
+                  if (title) wpTitle = `${title} Watch Party`;
+                }
+                const wpWin = new BrowserWindow({
+                  width: 1200,
+                  height: 800,
+                  autoHideMenuBar: true,
+                  title: wpTitle,
+                  webPreferences: {
+                    sandbox: true,
+                    nodeIntegration: false,
+                    contextIsolation: true,
+                  },
+                });
+                wpWin.setMenu(null);
+                wpWin.on('page-title-updated', (e) => e.preventDefault());
+
+                // Mute the background player (BrowserView + any separate player windows)
+                // so it doesn't interfere with the Watch Party's own player
+                const mutedViews: Electron.WebContents[] = [];
+                const mutedWindows: Electron.WebContents[] = [];
+                // Use mainWin (the actual app window) for looking up BrowserViews and player windows
+                const targetWin = mainWin || parentWin;
+                if (targetWin) {
+                  // Mute any BrowserView player attached to the main window
+                  try {
+                    const views = (targetWin as any).getBrowserViews ? (targetWin as any).getBrowserViews() : [];
+                    for (const v of views) {
+                      try { if (v.webContents && !v.webContents.isDestroyed()) { v.webContents.setAudioMuted(true); mutedViews.push(v.webContents); } } catch (e) {}
+                    }
+                  } catch (e) {}
+                  // Mute any separate player windows opened by the main window
+                  try {
+                    const tracked = playerWindowsByParent.get(targetWin.id);
+                    if (tracked) {
+                      for (const pw of tracked) {
+                        try { if (!pw.isDestroyed() && pw.webContents) { pw.webContents.setAudioMuted(true); mutedWindows.push(pw.webContents); } } catch (e) {}
+                      }
+                    }
+                  } catch (e) {}
+                  // Notify the renderer that Watch Party is active (so it can pause inline players)
+                  try { targetWin.webContents.send('watchparty-state', true); } catch (e) {}
+                }
+                // Also mute the originating contents itself (the embedded player frame)
+                try { if (!contents.isDestroyed()) { contents.setAudioMuted(true); mutedViews.push(contents); } } catch (e) {}
+
+                // When Watch Party window closes, unmute everything and notify renderer
+                wpWin.on('closed', () => {
+                  for (const wc of mutedViews) {
+                    try { if (!wc.isDestroyed()) wc.setAudioMuted(false); } catch (e) {}
+                  }
+                  for (const wc of mutedWindows) {
+                    try { if (!wc.isDestroyed()) wc.setAudioMuted(false); } catch (e) {}
+                  }
+                  if (targetWin && !targetWin.isDestroyed()) {
+                    try { targetWin.webContents.send('watchparty-state', false); } catch (e) {}
+                  }
+                });
+
+                wpWin.loadURL(url);
+                wpWin.show();
+                return { action: 'deny' }; // deny the default popup since we handled it manually
+              }
+
               if (isPlayerContent) {
                 // Allow same-origin navigations (sub-frames the player needs)
                 try {
@@ -750,6 +843,190 @@ ipcMain.handle('check-url-headers', async (event, urlString: string) => {
   }
 });
 
+// IPC: fetch download links by loading the download page in a hidden window and scraping the rendered HTML
+ipcMain.handle('fetch-download-links', async (_event, tmdbId: number, mediaType: string, season?: number, episode?: number) => {
+  let hiddenWin: BrowserWindow | null = null;
+  try {
+    let downloadUrl = '';
+    if (mediaType === 'tv' && season && episode) {
+      downloadUrl = `https://www.rivestream.app/download?type=tv&id=${tmdbId}&season=${season}&episode=${episode}`;
+    } else if (mediaType === 'tv' && season) {
+      downloadUrl = `https://www.rivestream.app/download?type=tv&id=${tmdbId}&season=${season}&episode=1`;
+    } else {
+      downloadUrl = `https://www.rivestream.app/download?type=movie&id=${tmdbId}`;
+    }
+
+    // Use a separate session partition so the adblock rules don't block download page resources
+    hiddenWin = new BrowserWindow({
+      width: 1024,
+      height: 768,
+      show: false,
+      webPreferences: {
+        sandbox: true,
+        nodeIntegration: false,
+        contextIsolation: true,
+        partition: 'download-scraper',
+      },
+    });
+
+    // Set a proper user-agent so the site doesn't reject the request
+    hiddenWin.webContents.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+    );
+
+    await hiddenWin.loadURL(downloadUrl);
+
+    // Wait for the SPA to render the download links (poll for up to 20s)
+    // The page has sections: Torrents, Streams, Drive Downloads — each loads dynamically.
+    // We use a broad scraping strategy that doesn't depend on hashed CSS class names.
+    const links: { url: string; text: string; section: string }[] = await new Promise((resolve) => {
+      let attempts = 0;
+      const maxAttempts = 40; // 40 × 500ms = 20s
+      const iv = setInterval(async () => {
+        attempts++;
+        try {
+          const result = await hiddenWin!.webContents.executeJavaScript(`
+            (function() {
+              var results = [];
+              var seen = {};
+
+              function addLink(href, text, section) {
+                if (!href || !text || text.length < 3) return;
+                if (href.startsWith('#') || href.endsWith('/') || href === window.location.href) return;
+                // Skip navigation-like links
+                if (['home', 'about', 'contact', 'login', 'signup', 'register'].indexOf(text.toLowerCase()) >= 0) return;
+                if (!seen[href]) {
+                  seen[href] = true;
+                  results.push({ url: href, text: text, section: section });
+                }
+              }
+
+              // Strategy 1: Find sections by heading text and walk UP the tree to find the section container
+              var headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+              headings.forEach(function(h) {
+                var txt = (h.textContent || '').trim().toLowerCase();
+                var sectionName = '';
+                if (txt === 'torrents') sectionName = 'Torrents';
+                else if (txt === 'streams') sectionName = 'Streams';
+                else if (txt.includes('drive download')) sectionName = 'Drive Downloads';
+                else if (txt === 'captions') sectionName = 'Captions';
+                if (!sectionName) return;
+
+                // Walk UP to find the section container (try parent, grandparent, great-grandparent)
+                var container = h.parentElement;
+                for (var depth = 0; depth < 4 && container; depth++) {
+                  var anchors = container.querySelectorAll('a[href]');
+                  if (anchors.length > 0) {
+                    var foundAny = false;
+                    anchors.forEach(function(a) {
+                      var href = a.getAttribute('href') || '';
+                      var aText = (a.textContent || '').trim();
+                      // Skip the heading itself if it's an anchor
+                      if (a === h || a.contains(h) || h.contains(a)) return;
+                      if (aText && aText.length > 3) {
+                        addLink(href, aText, sectionName);
+                        foundAny = true;
+                      }
+                    });
+                    if (foundAny) break; // Found links at this container level, stop walking up
+                  }
+                  container = container.parentElement;
+                }
+
+                // Also check next siblings of the heading for link containers
+                var sibling = h.nextElementSibling;
+                for (var s = 0; s < 5 && sibling; s++) {
+                  var sibAnchors = sibling.querySelectorAll('a[href]');
+                  sibAnchors.forEach(function(a) {
+                    var href = a.getAttribute('href') || '';
+                    var aText = (a.textContent || '').trim();
+                    if (aText && aText.length > 3) {
+                      addLink(href, aText, sectionName);
+                    }
+                  });
+                  // Also check if the sibling itself is a link
+                  if (sibling.tagName === 'A' && sibling.getAttribute('href')) {
+                    addLink(sibling.getAttribute('href'), (sibling.textContent || '').trim(), sectionName);
+                  }
+                  sibling = sibling.nextElementSibling;
+                }
+              });
+
+              // Strategy 2: Look for links with torrent/magnet/known-download-site URLs
+              if (results.length === 0) {
+                document.querySelectorAll('a[href]').forEach(function(a) {
+                  var href = (a.getAttribute('href') || '');
+                  var hrefLower = href.toLowerCase();
+                  var text = (a.textContent || '').trim();
+                  if (text.length > 3 && (
+                    hrefLower.includes('torrent') || hrefLower.includes('magnet:') ||
+                    hrefLower.includes('yts') || hrefLower.includes('1337x') ||
+                    hrefLower.includes('rarbg') || hrefLower.includes('nyaa') ||
+                    hrefLower.includes('drive.google') || hrefLower.includes('.mkv') ||
+                    hrefLower.includes('.mp4') || hrefLower.includes('.avi')
+                  )) {
+                    addLink(href, text, 'Download');
+                  }
+                });
+              }
+
+              // Strategy 3: CSS class-based matching (for the known Rivestream class names)
+              if (results.length === 0) {
+                document.querySelectorAll(
+                  'a[class*="sourceLink"], a[class*="SourceLink"], a[class*="source_link"],' +
+                  '[class*="sourceGroup"] a, [class*="SourceGroup"] a,' +
+                  '[class*="Download_source"] a, [class*="download_source"] a,' +
+                  '[class*="Download"] a[href]:not([href="#"]):not([href="/"])'
+                ).forEach(function(a) {
+                  var href = a.getAttribute('href');
+                  var text = (a.textContent || '').trim();
+                  if (text && text.length > 3) {
+                    addLink(href, text, 'Download');
+                  }
+                });
+              }
+
+              return results;
+            })()
+          `);
+          if (Array.isArray(result) && result.length > 0) {
+            clearInterval(iv);
+            resolve(result);
+          } else if (attempts >= maxAttempts) {
+            clearInterval(iv);
+            resolve([]);
+          }
+        } catch (e) {
+          if (attempts >= maxAttempts) {
+            clearInterval(iv);
+            resolve([]);
+          }
+        }
+      }, 500);
+    });
+
+    try { if (hiddenWin && !hiddenWin.isDestroyed()) hiddenWin.close(); } catch (e) {}
+    hiddenWin = null;
+
+    if (links.length === 0) {
+      return { links: [], error: 'No download links found for this title.' };
+    }
+    return { links };
+  } catch (e) {
+    try { if (hiddenWin && !hiddenWin.isDestroyed()) hiddenWin.close(); } catch (_) {}
+    return { links: [], error: String(e) };
+  }
+});
+
+// Track the current media title per main window (set by renderer when playback starts)
+const mediaTitle = new Map<number, string>();
+ipcMain.handle('set-media-title', async (event, title: string) => {
+  try {
+    const win = BrowserWindow.fromWebContents(event.sender as any);
+    if (win) mediaTitle.set(win.id, title || '');
+  } catch (e) {}
+});
+
 // IPC: open a dedicated BrowserWindow for the player URL
 // Track per-parent: the saved window state and how many player windows are still open.
 // Only restore the parent's state when ALL player windows have been closed.
@@ -772,6 +1049,7 @@ ipcMain.handle('open-player-window', async (event, urlString: string) => {
     const win = new BrowserWindow({
       width: 1100,
       height: 700,
+      title: 'JStream Player',
       autoHideMenuBar: true,
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
@@ -779,6 +1057,8 @@ ipcMain.handle('open-player-window', async (event, urlString: string) => {
     });
     // Remove the menu bar entirely so the window is plain
     win.setMenu(null);
+    // Prevent the page title from overwriting our custom title (hides the streaming URL)
+    win.on('page-title-updated', (e) => e.preventDefault());
 
     // Track this window under its parent
     if (parentWin) {
@@ -829,8 +1109,19 @@ ipcMain.handle('open-player-window', async (event, urlString: string) => {
       });
     }
 
-    await win.loadURL(urlString);
+    // Show a loading page first, then navigate to the actual streaming URL
+    const loadingPage = path.join(app.getAppPath(), 'public', 'player-loading.html');
+    const loadingFallback = path.join(__dirname, '..', 'public', 'player-loading.html');
+    const resolvedLoading = fs.existsSync(loadingPage) ? loadingPage : (fs.existsSync(loadingFallback) ? loadingFallback : '');
+    if (resolvedLoading) {
+      try { await win.loadFile(resolvedLoading); } catch (_) { /* ignore if loading page missing */ }
+    }
     win.show();
+
+    // Now navigate to the actual player URL in the background
+    win.webContents.loadURL(urlString).catch((e) => {
+      console.error('Player window: failed to load streaming URL', e);
+    });
     return { success: true };
   } catch (e) {
     console.error('open-player-window failed', e);

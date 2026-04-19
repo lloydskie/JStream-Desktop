@@ -30,10 +30,17 @@ The renderer accesses main-process features through these `window.*` namespaces 
 
 ### Developer workflows
 - **Dev** (repo root): `npm run dev` → runs `electron-forge start` in `jstream-desktop/` (Vite dev server + Electron)
+- **Dev** (inside app): `cd jstream-desktop && npm run dev` (same command, useful when working only in the app package)
 - **Tests**: `npm run test` → `vitest` in `jstream-desktop/`. Config: `vitest.config.ts` (jsdom, globals: true)
-- **Package**: `cd jstream-desktop && npx electron-forge make` (see `forge.config.ts`)
+- **Package**: `cd jstream-desktop && npm run make` (or `npx electron-forge make`; see `forge.config.ts`)
 - **DevTools**: disabled by default. Set env `JSTREAM_DEVTOOLS=1` to enable
 - **TMDB debug logging**: set `JSTREAM_TMDB_DEBUG=1` for proxy/rate-limit logs
+
+### Build and environment notes
+- **Root scripts** (`package.json`) delegate to `jstream-desktop/` with `npm --prefix ./jstream-desktop run <script>`.
+- **Primary app scripts** live in `jstream-desktop/package.json` (`dev`, `start`, `test`, `make`).
+- **Vite split configs**: `vite.main.config.ts`, `vite.preload.config.ts`, `vite.renderer.config.ts` are orchestrated by Electron Forge via `forge.config.ts`.
+- **Optional dev server bind**: `VITE_HOST` and `VITE_PORT`.
 
 ### Cross-process IPC pattern (follow this exactly)
 1. Add handler in `src/main.ts`: `ipcMain.handle('my-channel', async (event, ...args) => { ... })`
@@ -54,6 +61,13 @@ The renderer accesses main-process features through these `window.*` namespaces 
 - **Frameless window**: `frame: false` — custom title bar controls via `window.windowControls`.
 - **Starts fullscreen**: `mainWindow.setFullScreen(true)` on `ready-to-show`.
 - **F11** toggles fullscreen; **Escape** exits fullscreen.
+
+### Common pitfalls and gotchas
+1. Renderer code must never import `ipcRenderer` directly. Always go through `window.*` APIs exposed in preload.
+2. New user data features must use `src/main/accountDatabase.ts`; avoid adding features to the legacy SQL-like shim in `src/main/database.ts`.
+3. Keep kids filtering in the TMDB flow (`fetchTMDB()` + `applyKidsFilter()`) before data reaches UI rendering.
+4. Remote Config is intentionally disabled by default in Electron due to CSP/IndexedDB issues. Only enable for targeted debugging.
+5. Player/adblock behavior depends on the `persist:player` session partition. If adding webview features, ensure handlers are attached for that partition.
 
 ### Testing patterns
 - **Environment**: Vitest + jsdom, globals enabled. Tests in `src/renderer/__tests__/`.
@@ -81,3 +95,11 @@ The renderer accesses main-process features through these `window.*` namespaces 
 - `jstream-desktop/src/utils/kidsFilter.ts` — kids content filtering logic
 - `jstream-desktop/src/renderer/App.tsx` — main UI shell, routing, account state
 - `jstream-desktop/src/renderer/VideoPlayer.tsx` — player providers and URL builders
+
+### Documentation map (link, do not duplicate)
+- `README.md` - repo entrypoint.
+- `jstream-desktop/documentation/players.md` - provider naming and context.
+- `jstream-desktop/documentation/certifications.md` - ratings/certification references.
+- `jstream-desktop/documentation/daily-id-exports.md` and `jstream-desktop/documentation/tmdb-daily-id-exports.md` - TMDB export workflows.
+- `jstream-desktop/documentation/adult-words.md` - blocked-word baseline for kids filter.
+- `jstream-desktop/documentation/vidfast.md`, `jstream-desktop/documentation/vidsrc.md`, `jstream-desktop/documentation/vidlink.md` - provider-specific notes.

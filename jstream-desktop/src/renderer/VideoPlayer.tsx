@@ -112,6 +112,15 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
           return u;
         }
       }
+      case 'Eridanus': {
+        if (type === 'movie') {
+          return `https://www.rivestream.app/embed?type=movie&id=${tmdbId}`;
+        }
+        if (season != null && episode != null) {
+          return `https://www.rivestream.app/embed?type=tv&id=${tmdbId}&season=${season}&episode=${episode}`;
+        }
+        return `https://www.rivestream.app/embed?type=tv&id=${tmdbId}&season=1&episode=1`;
+      }
       case 'Aether':
       default: {
         return buildVideasyUrl(config, type, params);
@@ -764,7 +773,32 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
 
   // (iframe error handler removed; BrowserView path used instead)
 
-  if (!url && !error) return <div>Loading player...</div>;
+  // Inline loading animation styles
+  const loadingContainerStyle: React.CSSProperties = {
+    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+    width: '100%', height: '100%', minHeight: '300px', background: '#0a0a0f', color: '#fff',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+    userSelect: 'none',
+  };
+
+  if (!url && !error) return (
+    <div style={loadingContainerStyle}>
+      <div style={{ position: 'relative', width: 64, height: 64, marginBottom: 24 }}>
+        <div style={{ position: 'absolute', inset: 0, border: '3px solid transparent', borderTopColor: '#dc2626', borderRadius: '50%', animation: 'jstream-spin 1.2s cubic-bezier(0.5,0,0.5,1) infinite' }} />
+        <div style={{ position: 'absolute', inset: 7, border: '3px solid transparent', borderTopColor: '#f87171', borderRadius: '50%', animation: 'jstream-spin 1.2s cubic-bezier(0.5,0,0.5,1) infinite', animationDelay: '-0.15s' }} />
+        <div style={{ position: 'absolute', inset: 14, border: '3px solid transparent', borderTopColor: '#fca5a5', borderRadius: '50%', animation: 'jstream-spin 1.2s cubic-bezier(0.5,0,0.5,1) infinite', animationDelay: '-0.3s' }} />
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#dc2626', animation: 'jstream-pulse 2s ease-in-out infinite' }}>▶</div>
+      </div>
+      <div style={{ fontSize: 15, fontWeight: 600, color: '#e5e7eb', marginBottom: 6 }}>Loading Player</div>
+      <div style={{ fontSize: 12, color: '#6b7280', animation: 'jstream-fade 2.5s ease-in-out infinite' }}>Preparing your stream…</div>
+      <style>{`
+        @keyframes jstream-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes jstream-pulse { 0%,100% { opacity: 0.6; transform: scale(1); } 50% { opacity: 1; transform: scale(1.15); } }
+        @keyframes jstream-fade { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
+        @keyframes jstream-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+      `}</style>
+    </div>
+  );
   const openExternal = () => {
     try {
       if ((window as any).openExternal && typeof (window as any).openExternal.url === 'function') {
@@ -781,11 +815,20 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
     <div className="videoplayer-wrapper" ref={containerRef}>
       <div className="video-aspect">
         {!headersChecked ? (
-          <div style={{ padding: 16 }}>Checking player availability…</div>
+          <div style={loadingContainerStyle}>
+            <div style={{ position: 'relative', width: 56, height: 56, marginBottom: 20 }}>
+              <div style={{ position: 'absolute', inset: 0, border: '3px solid transparent', borderTopColor: '#dc2626', borderRadius: '50%', animation: 'jstream-spin 1.2s cubic-bezier(0.5,0,0.5,1) infinite' }} />
+              <div style={{ position: 'absolute', inset: 7, border: '3px solid transparent', borderTopColor: '#f87171', borderRadius: '50%', animation: 'jstream-spin 1.2s cubic-bezier(0.5,0,0.5,1) infinite', animationDelay: '-0.15s' }} />
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: '#dc2626', animation: 'jstream-pulse 2s ease-in-out infinite' }}>▶</div>
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#e5e7eb', marginBottom: 4 }}>Checking Player</div>
+            <div style={{ fontSize: 12, color: '#6b7280', animation: 'jstream-fade 2.5s ease-in-out infinite' }}>Verifying stream availability…</div>
+          </div>
         ) : embedBlocked ? (
-          <div style={{ padding: 16, textAlign: 'center' }}>
-            <div style={{ marginBottom: 8, fontSize: '18px', fontWeight: 'bold' }}>The player is now opened on a separate window.</div>
-            <div style={{ fontSize: '16px' }}>Enjoy Streaming ❤</div>
+          <div style={{ ...loadingContainerStyle, minHeight: '200px' }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>🎬</div>
+            <div style={{ fontSize: 18, fontWeight: 'bold', color: '#e5e7eb', marginBottom: 8 }}>Player Opened in Separate Window</div>
+            <div style={{ fontSize: 14, color: '#9ca3af' }}>Enjoy streaming ❤</div>
           </div>
         ) : useWebview ? (
           // Use Electron webview as an in-tab fallback for sites that disallow being framed
@@ -819,8 +862,14 @@ export default function VideoPlayer({ type, params, player }: VideoPlayerProps) 
           // better embed isolation and to avoid CSP framing errors. If BrowserView cannot
           // be created, the `playerView.create` call will return an error and we'll
           // fallback to the webview / external options.
-          <div style={{ padding: 8 }}>
-            <div style={{ marginBottom: 8 }}>Opening player in app (BrowserView)…</div>
+          <div style={{ ...loadingContainerStyle, minHeight: '200px' }}>
+            <div style={{ position: 'relative', width: 56, height: 56, marginBottom: 20 }}>
+              <div style={{ position: 'absolute', inset: 0, border: '3px solid transparent', borderTopColor: '#dc2626', borderRadius: '50%', animation: 'jstream-spin 1.2s cubic-bezier(0.5,0,0.5,1) infinite' }} />
+              <div style={{ position: 'absolute', inset: 7, border: '3px solid transparent', borderTopColor: '#f87171', borderRadius: '50%', animation: 'jstream-spin 1.2s cubic-bezier(0.5,0,0.5,1) infinite', animationDelay: '-0.15s' }} />
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: '#dc2626', animation: 'jstream-pulse 2s ease-in-out infinite' }}>▶</div>
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#e5e7eb', marginBottom: 4 }}>Opening Player</div>
+            <div style={{ fontSize: 12, color: '#6b7280', animation: 'jstream-fade 2.5s ease-in-out infinite', marginBottom: 16 }}>Loading your stream…</div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 className="button"

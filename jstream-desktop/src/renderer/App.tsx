@@ -359,7 +359,7 @@ export default function App() {
   const [playerModalOpen, setPlayerModalOpen] = useState(false);
   const [playerModalType, setPlayerModalType] = useState<'movie'|'tv'>('movie');
   const [playerModalParams, setPlayerModalParams] = useState<Record<string, any> | null>(null);
-  const [selectedPlayer, setSelectedPlayer] = useState<'Aether'|'Boreal'|'Cygnus'|'Draco'>('Aether');
+  const [selectedPlayer, setSelectedPlayer] = useState<'Aether'|'Boreal'|'Cygnus'|'Draco'|'Eridanus'>('Aether');
   const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(null);
   // Player modal TV selectors
   const [playerSeasons, setPlayerSeasons] = useState<any[] | null>(null);
@@ -1143,7 +1143,7 @@ export default function App() {
               <div className="player-modal-selector" onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ color: '#fff', fontSize: 13, marginRight: 8 }}>Player:</div>
-                  {(['Aether','Boreal','Cygnus','Draco'] as const).map((name) => (
+                  {(['Aether','Boreal','Cygnus','Draco','Eridanus'] as const).map((name) => (
                     <button
                       key={name}
                       onClick={() => { try { console.info('App: player selector clicked ->', name); } catch(e){}; setSelectedPlayer(name); }}

@@ -46,6 +46,13 @@ export default function VideoPlayerPage({ playerType = 'movie', params = null, o
     })();
   }, [playerType, paramsKey]);
 
+  // Notify main process of the current media title for Watch Party window naming
+  useEffect(() => {
+    if (!item) return;
+    const title = item.title || item.name || '';
+    try { (window as any).playerWindow?.setMediaTitle(title); } catch (e) {}
+  }, [item]);
+
   if (!params || !params.tmdbId) return <Box p={4}><Text>Select a movie or TV show to begin playback.</Text></Box>;
   if (loading) return <Box p={4}><Spinner /></Box>;
   if (!item) return <Box p={4}><Text>Item not found.</Text></Box>;

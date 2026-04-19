@@ -1,0 +1,5 @@
+Sample outerHTML of Rivestream Download Page:
+
+<div class="Download_sourceGroup__swFlO"><a href="https://yts.bz/torrent/download/381E590C57B9DA5AA00E0DA89BCCDD6CADE1D742" class="Download_sourceLink__BTn4l">Deadpool & Wolverine | 720p | bluray | 1.15 GB </a><a href="https://yts.bz/torrent/download/F2522361F10B765FB2FF9272E3FC4AB59CFA97C4" class="Download_sourceLink__BTn4l">Deadpool & Wolverine | 1080p | bluray | 2.36 GB </a><a href="https://yts.bz/torrent/download/9A9598A1343D80C9E485ACCCD43C722841DB45F4" class="Download_sourceLink__BTn4l">Deadpool & Wolverine | 720p | web | 1.15 GB </a><a href="https://yts.bz/torrent/download/D5DE41440647689B5D69C930BCAFA8135C115BF2" class="Download_sourceLink__BTn4l">Deadpool & Wolverine | 1080p | web | 2.36 GB </a><a href="https://yts.bz/torrent/download/4E50135AB605DB4C29863AE6214A4AF0F6DB36D7" class="Download_sourceLink__BTn4l">Deadpool & Wolverine | 1080p | web | 2.13 GB </a><a href="https://yts.bz/torrent/download/E9C819DAB503E1394F26B0667500F927C54059E0" class="Download_sourceLink__BTn4l">Deadpool & Wolverine | 2160p | web | 5.7 GB </a></div>
+
+it contains torrent links which can be downloaded and saved

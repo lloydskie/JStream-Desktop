@@ -137,9 +137,21 @@ contextBridge.exposeInMainWorld('network', {
   checkUrlHeaders: (u: string) => ipcRenderer.invoke('check-url-headers', u),
 });
 
+// Download API: fetch torrent links from the download provider
+contextBridge.exposeInMainWorld('downloads', {
+  fetchLinks: (tmdbId: number, mediaType: string, season?: number, episode?: number) =>
+    ipcRenderer.invoke('fetch-download-links', tmdbId, mediaType, season, episode),
+});
+
 contextBridge.exposeInMainWorld('playerWindow', {
   open: (u: string) => ipcRenderer.invoke('open-player-window', u),
   close: () => ipcRenderer.invoke('close-player-windows'),
+  setMediaTitle: (title: string) => ipcRenderer.invoke('set-media-title', title),
+  onWatchPartyState: (cb: (active: boolean) => void) => {
+    const listener = (_ev: any, active: boolean) => { try { cb(active); } catch (e) {} };
+    ipcRenderer.on('watchparty-state', listener);
+    return () => { try { ipcRenderer.removeListener('watchparty-state', listener); } catch (e) {} };
+  },
 });
 
 // BrowserView player API: create an overlay BrowserView attached to the app window

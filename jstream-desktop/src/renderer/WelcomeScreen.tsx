@@ -227,7 +227,7 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
     {
       icon: '🎬',
       title: 'Stream Movies & TV Shows',
-      description: 'Access thousands of movies and TV shows with multiple player options — Aether, Boreal, Cygnus, and Draco. Switch players instantly if one doesn\'t load.'
+      description: 'Access thousands of movies and TV shows with multiple player options — Aether, Boreal, Cygnus, Draco, and Eridanus. Switch players instantly if one doesn\'t load.'
     },
     {
       icon: '🛡️',
@@ -743,7 +743,7 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
                 <li><strong>Ad-Free</strong> – Built-in ad blocker for uninterrupted viewing</li>
                 <li><strong>No VPN Required</strong> – Stream directly without hassle</li>
                 <li><strong>100% Private</strong> – Your data stays on your device</li>
-                <li><strong>Multiple Players</strong> – 4 player options to choose from</li>
+                <li><strong>Multiple Players</strong> – 5 player options to choose from</li>
                 <li><strong>Episode Memory</strong> – Remembers your last TV episode</li>
                 <li><strong>Kids Mode</strong> – Built-in parental controls per profile</li>
               </ul>
@@ -793,7 +793,7 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
               <li><strong>Search</strong> – Press <kbd style={{ background: '#374151', padding: '2px 8px', borderRadius: '4px', fontSize: '12px' }}>Ctrl+K</kbd> or click 🔍 to search by title</li>
               <li><strong>Select</strong> – Click on any movie or show to see details</li>
               <li><strong>Play</strong> – Hit the Play button to start watching</li>
-              <li><strong>Switch Players</strong> – Use the player tabs (Aether, Boreal, Cygnus, Draco) if one doesn't load</li>
+              <li><strong>Switch Players</strong> – Use the player tabs (Aether, Boreal, Cygnus, Draco, Eridanus) if one doesn't load</li>
             </ol>
             <div style={{ display: 'grid', gap: '8px', marginTop: '12px' }}>
               <div style={{ background: '#1f2937', padding: '12px', borderRadius: '8px' }}>
@@ -886,7 +886,7 @@ export default function WelcomeScreen({ onAccountSelected, onAccountCreated }: W
               {[
                 { icon: '🔒', text: 'Your data stays private — everything is stored locally' },
                 { icon: '📋', text: 'Keep your Recovery PIN safe for account recovery' },
-                { icon: '🎬', text: 'Try different players (Aether, Boreal, Cygnus, Draco) if one doesn\'t work' },
+                { icon: '🎬', text: 'Try different players (Aether, Boreal, Cygnus, Draco, Eridanus) if one doesn\'t work' },
                 { icon: '📺', text: 'TV progress is saved — JStream remembers your last episode' },
                 { icon: '❤️', text: 'Add favorites by clicking the heart icon on any title' },
                 { icon: '🔃', text: 'Press Ctrl+R to reload if anything gets stuck' },

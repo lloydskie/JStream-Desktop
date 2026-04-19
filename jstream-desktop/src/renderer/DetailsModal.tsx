@@ -6,6 +6,7 @@ import PlusMinusIcon from './components/icons/PlusMinusIcon';
 import InfoIcon from './components/icons/InfoIcon';
 import DetailsHero from './components/DetailsHero';
 import RowScroller from './components/RowScroller';
+import DownloadModal from './DownloadModal';
 import { fetchTMDB } from '../utils/tmdbClient';
 
 export default function DetailsModal({ tmdbId, itemTypeHint, onPlay, onSelect, onSelectPerson, onGoToCollections, onClose }: { tmdbId?: number | null, itemTypeHint?: 'movie'|'tv'|null, onPlay?: (tmdbId: number | string, type?: 'movie'|'tv'|'anime', params?: Record<string, any>) => void, onSelect?: (tmdbId: number, type?: 'movie'|'tv') => void, onSelectPerson?: (personId:number)=>void, onGoToCollections?: (collectionId?: number) => void, onClose?: ()=>void }) {
@@ -33,6 +34,7 @@ export default function DetailsModal({ tmdbId, itemTypeHint, onPlay, onSelect, o
   const [showHeroContent, setShowHeroContent] = useState(true);
 
   const [isFavorite, setIsFavorite] = useState<boolean>(false);
+  const [showDownload, setShowDownload] = useState(false);
   const [seasons, setSeasons] = useState<any[]>([]);
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
   const [episodes, setEpisodes] = useState<any[]>([]);
@@ -519,6 +521,56 @@ export default function DetailsModal({ tmdbId, itemTypeHint, onPlay, onSelect, o
           {/* Use a cloned DetailsHero component so the modal can adjust hero behavior/styles independently */}
           {item && (
             <DetailsHero movie={item} onPlay={(id, t) => onPlay && onPlay(id, t as any)} onMore={() => { /* no-op in modal */ }} fullBleed={false} isModalOpen={true} isVisible={true} mediaType={itemType} onGoToCollections={onGoToCollections} />
+          )}
+
+          {/* Action bar: My List + Download */}
+          {item && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 24px 4px', flexWrap: 'wrap' }}>
+              <button
+                onClick={toggleFavorite}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                  background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: 8, padding: '8px 16px', cursor: 'pointer', color: '#fff',
+                  fontSize: 13, fontWeight: 600, transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.14)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+                aria-label={isFavorite ? 'Remove from My List' : 'Add to My List'}
+              >
+                <PlusMinusIcon isPlus={!isFavorite} size={16} color="#fff" />
+                <span>{isFavorite ? 'In My List' : 'My List'}</span>
+              </button>
+              <button
+                onClick={() => setShowDownload(true)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                  background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: 8, padding: '8px 16px', cursor: 'pointer', color: '#fff',
+                  fontSize: 13, fontWeight: 600, transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.14)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+                aria-label="Download"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 16l-5-5h3V4h4v7h3l-5 5z" fill="#fff"/>
+                  <path d="M20 18H4v2h16v-2z" fill="#fff"/>
+                </svg>
+                <span>Download</span>
+              </button>
+            </div>
+          )}
+
+          {showDownload && item && tmdbId && (
+            <DownloadModal
+              tmdbId={tmdbId}
+              mediaType={itemType}
+              title={item.title || item.name || ''}
+              season={itemType === 'tv' ? selectedSeason ?? undefined : undefined}
+              episode={itemType === 'tv' ? selectedEpisode ?? undefined : undefined}
+              onClose={() => setShowDownload(false)}
+            />
           )}
 
           <div className="detail-sections">

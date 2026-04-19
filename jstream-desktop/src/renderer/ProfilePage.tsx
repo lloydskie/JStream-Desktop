@@ -527,7 +527,7 @@ export default function ProfilePage({ onSignOut }: ProfilePageProps) {
                   {[
                     { icon: '🛡️', title: 'Built-in Ad Blocker', desc: 'No pop-ups, no ads — just pure streaming' },
                     { icon: '📺', title: 'Smart Episode Memory', desc: 'Remembers your last season & episode' },
-                    { icon: '🎬', title: 'Multiple Players', desc: '4 player options if one doesn\'t load' },
+                    { icon: '🎬', title: 'Multiple Players', desc: '5 player options if one doesn\'t load' },
                     { icon: '👨‍👩‍👧‍👦', title: 'Multi-Profile', desc: 'Separate profiles for each family member' },
                     { icon: '👶', title: 'Kids Mode', desc: 'Parental controls that filter adult content' },
                     { icon: '🔒', title: '100% Private', desc: 'No cloud, no tracking, all data stays local' },
@@ -580,7 +580,7 @@ export default function ProfilePage({ onSignOut }: ProfilePageProps) {
                     { step: '1', title: 'Browse or Search', desc: 'Scroll through the homepage, use the tabs (Movies, Shows, New & Popular), or press Ctrl+K to open search and find titles by name.', icon: '🔍' },
                     { step: '2', title: 'Select a Title', desc: 'Click on any movie or TV show poster to open its details page. You\'ll see the synopsis, rating, cast, and more.', icon: '👆' },
                     { step: '3', title: 'Hit Play', desc: 'Click the Play button to start watching. The default player (Aether) will load automatically.', icon: '▶️' },
-                    { step: '4', title: 'Switch Players if Needed', desc: 'If a player doesn\'t load or buffer, use the player tabs above the video to switch between Aether, Boreal, Cygnus, or Draco.', icon: '🔄' },
+                    { step: '4', title: 'Switch Players if Needed', desc: 'If a player doesn\'t load or buffer, use the player tabs above the video to switch between Aether, Boreal, Cygnus, Draco, or Eridanus.', icon: '🔄' },
                     { step: '5', title: 'Choose Season & Episode (TV)', desc: 'For TV shows, use the season and episode dropdowns that appear above the player. JStream remembers where you left off!', icon: '📺' },
                   ].map((item, idx) => (
                     <div key={idx} style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', background: '#374151', padding: '20px', borderRadius: '12px' }}>
@@ -657,14 +657,15 @@ export default function ProfilePage({ onSignOut }: ProfilePageProps) {
             <>
               <div style={cardStyle}>
                 <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '8px', color: 'white' }}>Player Options</h2>
-                <p style={{ color: '#9ca3af', marginBottom: '24px', lineHeight: 1.6 }}>JStream offers 4 different player sources. If one player doesn't load, is slow, or has issues, simply switch to another using the tabs above the video.</p>
+                <p style={{ color: '#9ca3af', marginBottom: '24px', lineHeight: 1.6 }}>JStream offers 5 different player sources. If one player doesn't load, is slow, or has issues, simply switch to another using the tabs above the video.</p>
 
                 <div style={{ display: 'grid', gap: '16px' }}>
                   {[
-                    { name: 'Aether', desc: 'Default player powered by Videasy. Generally the most reliable with fast load times and good video quality.', badge: 'Recommended', badgeColor: '#22c55e' },
-                    { name: 'Boreal', desc: 'Powered by Vidfast. A solid alternative with quick buffering. Great backup if Aether is slow.', badge: 'Fast', badgeColor: '#3b82f6' },
-                    { name: 'Cygnus', desc: 'Powered by Vidsrc. Offers a different source library — some titles may be available here that aren\'t on other players.', badge: 'Alternative', badgeColor: '#a855f7' },
-                    { name: 'Draco', desc: 'Powered by Vidlink. Another alternative source with its own library. Try this if other players aren\'t working for a specific title.', badge: 'Alternative', badgeColor: '#f59e0b' },
+                    { name: 'Aether', desc: 'The default player. Generally the most reliable with fast load times and good video quality.', badge: 'Recommended', badgeColor: '#22c55e' },
+                    { name: 'Boreal', desc: 'A solid alternative with quick buffering. Great backup if Aether is slow.', badge: 'Fast', badgeColor: '#3b82f6' },
+                    { name: 'Cygnus', desc: 'Offers a different source library — some titles may be available here that aren\'t on other players.', badge: 'Alternative', badgeColor: '#a855f7' },
+                    { name: 'Draco', desc: 'Another alternative source with its own library. Try this if other players aren\'t working for a specific title.', badge: 'Alternative', badgeColor: '#f59e0b' },
+                    { name: 'Eridanus', desc: 'A comprehensive source with broad title coverage. Great additional option when other players are unavailable.', badge: 'New', badgeColor: '#ec4899' },
                   ].map((player, idx) => (
                     <div key={idx} style={{ background: '#374151', borderRadius: '12px', padding: '20px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
@@ -709,9 +710,9 @@ export default function ProfilePage({ onSignOut }: ProfilePageProps) {
 
                 <div style={{ display: 'grid', gap: '16px' }}>
                   {[
-                    { q: 'Player won\'t load or shows a blank screen', a: 'Switch to a different player using the tabs above the video (try Aether → Boreal → Cygnus → Draco). If none work, press Ctrl+R to reload the app.' },
-                    { q: 'Video is buffering or slow', a: 'Try switching to a different player — each one uses a different source server. Boreal (Vidfast) tends to buffer quickly.' },
-                    { q: 'A movie or show isn\'t available', a: 'Try all 4 players. Some titles are only available on certain player sources. If it\'s not on any, the title may not be streamable yet.' },
+                    { q: 'Player won\'t load or shows a blank screen', a: 'Switch to a different player using the tabs above the video (try Aether → Boreal → Cygnus → Draco → Eridanus). If none work, press Ctrl+R to reload the app.' },
+                    { q: 'Video is buffering or slow', a: 'Try switching to a different player — each one uses a different source server. Boreal tends to buffer quickly.' },
+                    { q: 'A movie or show isn\'t available', a: 'Try all 5 players. Some titles are only available on certain player sources. If it\'s not on any, the title may not be streamable yet.' },
                     { q: 'The app is frozen or unresponsive', a: 'Press Ctrl+R to reload the app. This refreshes everything and should fix most freezes.' },
                     { q: 'I forgot my PIN', a: 'On the login screen, click "Forgot PIN?" and enter your 6-digit Recovery PIN to reset it. Or go to Security → "Forgot PIN? Use Recovery PIN".' },
                     { q: 'How do I switch profiles?', a: 'Go to Security tab → Sign Out. You\'ll return to the profile selection screen where you can pick a different profile or create a new one.' },
